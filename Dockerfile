@@ -8,6 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+ARG APP_DIR=bull_project
+
 # Системные зависимости для tesseract/pdf2image/opencv
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -21,11 +23,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Зависимости Python
-COPY requirements.txt .
+COPY ${APP_DIR}/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Код приложения
-COPY . /app/bull_project
+COPY ${APP_DIR} /app/bull_project
 
 # Пусть Python видит проект
 ENV PYTHONPATH=/app
