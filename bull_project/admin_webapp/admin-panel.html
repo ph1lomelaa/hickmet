@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Админ Панель - Hickmet Premium</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/assets/config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -487,8 +488,8 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        // API базовый URL (поменяйте на ваш)
-        const API_BASE = 'https://gainless-computably-pablo.ngrok-free.dev';
+        // API базовый URL (из общего конфига)
+        const API_BASE = window.BULL_API_URL;
         const HISTORY_WEBAPP_URL = 'https://ph1lomelaa.github.io/book/history_v2.html';
         const SEARCH_WEBAPP_URL = 'https://ph1lomelaa.github.io/book/search-pilgrim.html';
 

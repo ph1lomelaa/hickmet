@@ -65,6 +65,12 @@ app.add_middleware(
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CARE_WEBAPP_DIR = os.path.join(PROJECT_ROOT, "care_webapp")
 ASSETS_DIR = os.path.join(PROJECT_ROOT, "assets")
+
+# Инициализация БД при старте приложения
+@app.on_event("startup")
+async def startup_event():
+    await init_db()
+
 if os.path.isdir(CARE_WEBAPP_DIR):
     app.mount(
         "/care-webapp",
