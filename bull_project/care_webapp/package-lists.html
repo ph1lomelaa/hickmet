@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📋 Списки по пакетам - Hickmet Premium</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/assets/config.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        :root {
+            --bg-primary: #FAF8F5;
+            --bg-secondary: #F5F1EB;
+            --bg-card: #FFFFFF;
+            --accent-brown: #9B8474;
+            --accent-dark: #6B5D52;
+            --accent-light: #C4B5A7;
+            --text-primary: #3D3935;
+            --text-secondary: #8A827C;
+            --border-color: #E8E3DC;
+            --shadow-soft: 0 4px 12px rgba(107, 93, 82, 0.08);
+            --shadow-medium: 0 8px 24px rgba(107, 93, 82, 0.12);
+            --success-bg: #E8F5E9;
+            --success-text: #2E7D32;
+            --danger-bg: #FFEBEE;
+            --danger-text: #C62828;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            padding: 20px;
+            padding-bottom: 60px;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            border-radius: 20px;
+            padding: 30px 20px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-medium);
+            text-align: center;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.95;
+        }
+
+        .step-indicator {
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-brown);
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--accent-brown);
+        }
+
+        .spinner {
+            border: 3px solid var(--border-color);
+            border-top: 3px solid var(--accent-brown);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.3s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(107, 93, 82, 0.2);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(107, 93, 82, 0.3);
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 2px solid var(--border-color);
+            box-shadow: var(--shadow-soft);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent-light);
+        }
+
+        .btn-back {
+            background: var(--bg-secondary);
+            color: var(--accent-dark);
+            border: 2px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+
+        .btn-phones {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            margin-top: 0;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: var(--accent-dark);
+        }
+
+        .booking-card {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow-soft);
+            transition: all 0.3s ease;
+        }
+
+        .booking-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-medium);
+            border-color: var(--accent-light);
+        }
+
+        .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+
+        .booking-guest {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-dark);
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .status-active {
+            background: var(--success-bg);
+            color: var(--success-text);
+        }
+
+        .status-cancelled {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+        }
+
+        .booking-preview {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .booking-detail {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .booking-detail strong {
+            color: var(--text-primary);
+            margin-left: 4px;
+        }
+
+        .details-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-dark);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .details-btn:hover {
+            border-color: var(--accent-light);
+            transform: translateY(-1px);
+        }
+
+        .details-btn.active {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border-color: var(--accent-dark);
+        }
+
+        .booking-details-full {
+            display: none;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 2px solid var(--border-color);
+        }
+
+        .booking-details-full.show {
+            display: block;
+        }
+
+        .details-section {
+            margin-bottom: 16px;
+        }
+
+        .details-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .details-section-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-brown);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .manager-tag {
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            font-size: 13px;
+            color: var(--accent-dark);
+            font-weight: 600;
+        }
+
+        .phone-item {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: var(--shadow-soft);
+            transition: all 0.3s ease;
+        }
+
+        .phone-item:hover {
+            border-color: var(--accent-light);
+            transform: translateY(-1px);
+        }
+
+        .phone-name {
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--text-primary);
+        }
+
+        .phone-number {
+            font-size: 14px;
+            color: var(--accent-brown);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .no-data-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .count-badge {
+            background: rgba(155, 132, 116, 0.15);
+            color: var(--accent-brown);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Hickmet Premium</h1>
+        <p>Списки по пакетам</p>
+    </div>
+
+    <div id="stepIndicator" class="step-indicator"></div>
+
+    <div id="loadingDiv" class="loading hidden">
+        <div class="spinner"></div>
+        <p>Загрузка...</p>
+    </div>
+
+    <div id="errorDiv" class="error-message hidden"></div>
+
+    <!-- Шаг 1: Выбор таблицы -->
+    <div id="tablesSection" class="hidden">
+        <div class="section-title">Выберите таблицу:</div>
+        <div id="tablesList"></div>
+    </div>
+
+    <!-- Шаг 2: Выбор даты (листа) -->
+    <div id="datesSection" class="hidden">
+        <button class="btn btn-back" onclick="backToTables()">← Назад к таблицам</button>
+        <div class="section-title">Выберите дату:</div>
+        <div id="datesList"></div>
+    </div>
+
+    <!-- Шаг 3: Выбор пакета -->
+    <div id="packagesSection" class="hidden">
+        <button class="btn btn-back" onclick="backToDates()">← Назад к датам</button>
+        <div class="section-title">Выберите пакет:</div>
+        <div id="packagesList"></div>
+    </div>
+
+    <!-- Шаг 4: Список броней -->
+    <div id="bookingsSection" class="hidden">
+        <button class="btn btn-back" onclick="backToPackages()">← Назад к пакетам</button>
+        <div class="section-title" id="bookingsTitle">Список паломников:</div>
+        <button class="btn btn-phones" onclick="showPhones()">📞 Показать номера телефонов</button>
+        <div id="bookingsList"></div>
+    </div>
+
+    <!-- Шаг 5: Список телефонов -->
+    <div id="phonesSection" class="hidden">
+        <button class="btn btn-back" onclick="backToBookings()">← Назад к списку</button>
+        <div class="section-title">Номера телефонов:</div>
+        <div id="phonesList"></div>
+    </div>
+
+    <script>
+        const API_URL = window.BULL_API_URL;
+        const tg = window.Telegram.WebApp;
+
+        tg.ready();
+        tg.expand();
+
+        const safeValue = (value, fallback = '-') => {
+            if (value === null || value === undefined) return fallback;
+            const str = String(value).trim();
+            return str === '' || str === '-' ? fallback : str;
+        };
+
+        const formatDateTime = (value) => {
+            if (!value) return '-';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return value;
+            const dateStr = date.toLocaleDateString('ru-RU');
+            const timeStr = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            return `${dateStr} ${timeStr}`;
+        };
+
+        let state = {
+            tables: {},
+            selectedTableId: null,
+            selectedTableName: null,
+            sheets: [],
+            selectedSheetName: null,
+            packages: [],
+            selectedPackage: null,
+            bookings: [],
+            phones: []
+        };
+
+        init();
+
+        async function init() {
+            updateStep('Шаг 1/4: Выбор таблицы');
+            await loadTables();
+        }
+
+        function updateStep(text) {
+            document.getElementById('stepIndicator').textContent = text;
+        }
+
+        function showSection(sectionId) {
+            ['tablesSection', 'datesSection', 'packagesSection', 'bookingsSection', 'phonesSection'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(sectionId).classList.remove('hidden');
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorDiv');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            setTimeout(() => errorDiv.classList.add('hidden'), 5000);
+        }
+
+        function showLoading() {
+            document.getElementById('loadingDiv').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingDiv').classList.add('hidden');
+        }
+
+        async function loadTables() {
+            showLoading();
+            try {
+                const response = await fetch(`${API_URL}/api/care/tables`, {
+                    headers: {"ngrok-skip-browser-warning": "1"}
+                });
+                const data = await response.json();
+                hideLoading();
+
+                if (!data.ok || !data.tables) {
+                    showError(data.error || 'Не удалось загрузить таблицы');
+                    return;
+                }
+
+                state.tables = data.tables;
+                displayTables();
+            } catch (error) {
+                console.error('Error loading tables:', error);
+                hideLoading();
+                showError('Ошибка подключения к серверу');
+            }
+        }
+
+        function displayTables() {
+            const container = document.getElementById('tablesList');
+            container.innerHTML = '';
+
+            Object.entries(state.tables).forEach(([name, id]) => {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-secondary';
+                btn.innerHTML = `<span>${name}</span><span>→</span>`;
+                btn.onclick = () => selectTable(name, id);
+                container.appendChild(btn);
+            });
+
+            showSection('tablesSection');
+        }
+
+        async function selectTable(tableName, tableId) {
+            state.selectedTableName = tableName;
+            state.selectedTableId = tableId;
+            updateStep('Шаг 2/4: Выбор даты');
+            await loadSheets();
+        }
+
+        async function loadSheets() {
+            showLoading();
+            try {
+                const response = await fetch(`${API_URL}/api/care/sheets?table_id=${encodeURIComponent(state.selectedTableId)}`, {
+                    headers: {"ngrok-skip-browser-warning": "1"}
+                });
+                const data = await response.json();
+                hideLoading();
+
+                if (!data.ok || !data.sheets) {
+                    showError(data.error || 'Не удалось загрузить даты');
+                    return;
+                }
+
+                state.sheets = data.sheets;
+                displaySheets();
+            } catch (error) {
+                console.error('Error loading sheets:', error);
+                hideLoading();
+                showError('Ошибка загрузки дат');
+            }
+        }
+
+        function displaySheets() {
+            const container = document.getElementById('datesList');
+            container.innerHTML = '';
+
+            if (state.sheets.length === 0) {
+                container.innerHTML = '<div class="no-data"><div class="no-data-icon">📅</div><p>Нет доступных дат</p></div>';
+            } else {
+                state.sheets.forEach(sheetName => {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn btn-secondary';
+                    btn.innerHTML = `<span>${sheetName}</span><span>→</span>`;
+                    btn.onclick = () => selectSheet(sheetName);
+                    container.appendChild(btn);
+                });
+            }
+
+            showSection('datesSection');
+        }
+
+        async function selectSheet(sheetName) {
+            state.selectedSheetName = sheetName;
+            updateStep('Шаг 3/4: Выбор пакета');
+            await loadPackages();
+        }
+
+        async function loadPackages() {
+            showLoading();
+            try {
+                const response = await fetch(
+                    `${API_URL}/api/care/packages-by-date?table_id=${encodeURIComponent(state.selectedTableId)}&sheet_name=${encodeURIComponent(state.selectedSheetName)}`,
+                    {headers: {"ngrok-skip-browser-warning": "1"}}
+                );
+                const data = await response.json();
+                hideLoading();
+
+                if (!data.ok) {
+                    showError(data.error || 'Не удалось загрузить пакеты');
+                    return;
+                }
+
+                state.packages = data.packages || [];
+                displayPackages();
+            } catch (error) {
+                console.error('Error loading packages:', error);
+                hideLoading();
+                showError('Ошибка загрузки пакетов');
+            }
+        }
+
+        function displayPackages() {
+            const container = document.getElementById('packagesList');
+            container.innerHTML = '';
+
+            if (state.packages.length === 0) {
+                container.innerHTML = '<div class="no-data"><div class="no-data-icon">📦</div><p>Нет пакетов на эту дату</p></div>';
+            } else {
+                state.packages.forEach(packageName => {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn btn-secondary';
+                    btn.innerHTML = `<span>${packageName}</span><span>→</span>`;
+                    btn.onclick = () => selectPackage(packageName);
+                    container.appendChild(btn);
+                });
+            }
+
+            showSection('packagesSection');
+        }
+
+        async function selectPackage(packageName) {
+            state.selectedPackage = packageName;
+            updateStep('Шаг 4/4: Список паломников');
+            await loadBookings();
+        }
+
+        async function loadBookings() {
+            showLoading();
+            try {
+                const response = await fetch(
+                    `${API_URL}/api/care/bookings-in-package?table_id=${encodeURIComponent(state.selectedTableId)}&sheet_name=${encodeURIComponent(state.selectedSheetName)}&package_name=${encodeURIComponent(state.selectedPackage)}`,
+                    {headers: {"ngrok-skip-browser-warning": "1"}}
+                );
+                const data = await response.json();
+                hideLoading();
+
+                if (!data.ok) {
+                    showError(data.error || 'Не удалось загрузить список');
+                    return;
+                }
+
+                state.bookings = data.bookings || [];
+                displayBookings();
+            } catch (error) {
+                console.error('Error loading bookings:', error);
+                hideLoading();
+                showError('Ошибка загрузки списка');
+            }
+        }
+
+        function displayBookings() {
+            const container = document.getElementById('bookingsList');
+            const title = document.getElementById('bookingsTitle');
+
+            title.innerHTML = `Список паломников: <span class="count-badge">${state.bookings.length}</span>`;
+            container.innerHTML = '';
+
+            if (state.bookings.length === 0) {
+                container.innerHTML = '<div class="no-data"><div class="no-data-icon">😔</div><p>Нет броней в этом пакете</p></div>';
+                return;
+            }
+
+            state.bookings.forEach((booking, index) => {
+                const status = booking.status || 'new';
+                const statusClass = status === 'cancelled' ? 'status-cancelled' : 'status-active';
+                const statusText = status === 'cancelled' ? 'Отменена' : 'Активная';
+
+                const guestName = `${index + 1}. ${safeValue(booking.last_name)} ${safeValue(booking.first_name)}`.trim();
+                const phone = safeValue(booking.phone);
+                const packageName = safeValue(booking.package_name);
+                const sheetName = safeValue(booking.sheet_name);
+                const roomType = safeValue(booking.room_type);
+                const mealType = safeValue(booking.meal_type);
+                const priceLabel = safeValue(booking.price);
+                const amountPaid = safeValue(booking.amount_paid);
+                const visaStatus = safeValue(booking.visa_status);
+                const avia = safeValue(booking.avia);
+                const train = safeValue(booking.train);
+                const region = safeValue(booking.region);
+                const departureCity = safeValue(booking.departure_city);
+                const source = safeValue(booking.source);
+                const comment = booking.comment && booking.comment.trim() !== '' ? booking.comment : '-';
+                const managerName = safeValue(booking.manager_name);
+                const createdLabel = formatDateTime(booking.created_at);
+                const sheetRow = booking.sheet_row_number != null ? booking.sheet_row_number : '-';
+
+                const card = document.createElement('div');
+                card.className = 'booking-card';
+
+                let html = `
+                    <div class="booking-header">
+                        <div class="booking-guest">${guestName}</div>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="booking-preview">
+                        <div class="booking-detail">📞 Телефон: <strong>${phone}</strong></div>
+                        <div class="booking-detail">📦 Пакет: <strong>${packageName}</strong></div>
+                        <div class="booking-detail">📅 Дата: <strong>${sheetName}</strong></div>
+                        <div class="booking-detail">🏠 Комната: <strong>${roomType}</strong></div>
+                        <div class="booking-detail">📄 Строка листа: <strong>${sheetRow}</strong></div>
+                    </div>
+                    <button class="details-btn" onclick="toggleDetails(${index})">📋 Подробнее</button>
+                    <div class="booking-details-full" id="details-${index}">
+                        <div class="details-section">
+                            <div class="details-section-title">Детали тура</div>
+                            <div class="booking-detail">Питание: <strong>${mealType}</strong></div>
+                            <div class="booking-detail">Регион: <strong>${region}</strong></div>
+                            <div class="booking-detail">Город вылета: <strong>${departureCity}</strong></div>
+                            <div class="booking-detail">Источник: <strong>${source}</strong></div>
+                            <div class="booking-detail">Виза: <strong>${visaStatus}</strong></div>
+                            ${avia !== '-' ? `<div class="booking-detail">Авиа: <strong>${avia}</strong></div>` : ''}
+                            ${train !== '-' ? `<div class="booking-detail">Поезд: <strong>${train}</strong></div>` : ''}
+                        </div>
+                        <div class="details-section">
+                            <div class="details-section-title">Финансы</div>
+                            <div class="booking-detail">Цена: <strong>${priceLabel}</strong></div>
+                            <div class="booking-detail">Оплачено: <strong>${amountPaid}</strong></div>
+                        </div>
+                        <div class="details-section">
+                            <div class="details-section-title">Комментарий</div>
+                            <div class="booking-detail">${comment === '-' ? '—' : comment}</div>
+                        </div>
+                        <div class="details-section">
+                            <div class="booking-detail">Менеджер: <strong>${managerName}</strong></div>
+                            <div class="booking-detail">Создано: <strong>${createdLabel}</strong></div>
+                        </div>
+                    </div>
+                `;
+
+                card.innerHTML = html;
+                container.appendChild(card);
+            });
+
+            showSection('bookingsSection');
+        }
+
+        function toggleDetails(index) {
+            const detailsDiv = document.getElementById(`details-${index}`);
+            const btn = event.target;
+
+            if (detailsDiv.classList.contains('show')) {
+                detailsDiv.classList.remove('show');
+                btn.classList.remove('active');
+                btn.innerHTML = '📋 Подробнее';
+            } else {
+                detailsDiv.classList.add('show');
+                btn.classList.add('active');
+                btn.innerHTML = '🔼 Скрыть';
+            }
+        }
+
+        async function showPhones() {
+            updateStep('Номера телефонов');
+            showLoading();
+
+            try {
+                const response = await fetch(
+                    `${API_URL}/api/care/phones-by-package?table_id=${encodeURIComponent(state.selectedTableId)}&sheet_name=${encodeURIComponent(state.selectedSheetName)}&package_name=${encodeURIComponent(state.selectedPackage)}`,
+                    {headers: {"ngrok-skip-browser-warning": "1"}}
+                );
+                const data = await response.json();
+                hideLoading();
+
+                if (!data.ok) {
+                    showError(data.error || 'Не удалось загрузить телефоны');
+                    return;
+                }
+
+                state.phones = data.phones || [];
+                displayPhones();
+            } catch (error) {
+                console.error('Error loading phones:', error);
+                hideLoading();
+                showError('Ошибка загрузки телефонов');
+            }
+        }
+
+        function displayPhones() {
+            const container = document.getElementById('phonesList');
+            container.innerHTML = '';
+
+            if (state.phones.length === 0) {
+                container.innerHTML = '<div class="no-data"><div class="no-data-icon">📞</div><p>Нет номеров телефонов</p></div>';
+            } else {
+                state.phones.forEach(item => {
+                    const phoneItem = document.createElement('div');
+                    phoneItem.className = 'phone-item';
+                    phoneItem.innerHTML = `
+                        <span class="phone-name">${item.name}</span>
+                        <a href="tel:${item.phone}" class="phone-number">${item.phone}</a>
+                    `;
+                    container.appendChild(phoneItem);
+                });
+            }
+
+            showSection('phonesSection');
+        }
+
+        function backToTables() {
+            updateStep('Шаг 1/4: Выбор таблицы');
+            displayTables();
+        }
+
+        function backToDates() {
+            updateStep('Шаг 2/4: Выбор даты');
+            displaySheets();
+        }
+
+        function backToPackages() {
+            updateStep('Шаг 3/4: Выбор пакета');
+            displayPackages();
+        }
+
+        function backToBookings() {
+            updateStep('Шаг 4/4: Список паломников');
+            displayBookings();
+        }
+    </script>
+</body>
+</html>

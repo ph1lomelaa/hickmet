@@ -1,0 +1,540 @@
+from sqlalchemy import select, desc, func, distinct, or_
+from datetime import datetime, timedelta
+from .models import User, Booking, Request4U
+from .setup import async_session
+
+# === ПОЛЬЗОВАТЕЛИ ===
+
+async def add_user(tg_id: int, full_name: str, username: str, role: str = "manager"):
+    async with async_session() as session:
+        # Проверяем, есть ли уже такой
+        user = await session.scalar(select(User).where(User.telegram_id == tg_id))
+        if user:
+            # Если есть - обновляем имя (вдруг он решил перезайти с новым именем)
+            user.full_name = full_name
+            user.role = role
+        else:
+            # Если нет - создаем
+            session.add(User(telegram_id=tg_id, full_name=full_name, username=username, role=role))
+        await session.commit()
+
+
+async def get_user_by_id(tg_id: int):
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.telegram_id == tg_id))
+        return user # Возвращаем весь объект (user.full_name, user.role)
+
+async def get_user_role(tg_id: int):
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.telegram_id == tg_id))
+        return user.role if user else None
+
+async def get_all_managers_list():
+    """Возвращает список всех сотрудников"""
+    async with async_session() as session:
+        query = select(User).where(User.role.in_(['manager', 'admin', 'care']))
+        result = await session.scalars(query)
+        return result.all()
+
+async def get_admin_ids():
+    async with async_session() as session:
+        query = select(User.telegram_id).where(User.role == "admin")
+        result = await session.scalars(query)
+        return result.all()
+
+async def delete_user(tg_id: int):
+    async with async_session() as session:
+        user = await session.get(User, tg_id)
+        if user:
+            user.role = "guest" # Мягкое удаление (сброс роли)
+            await session.commit()
+
+# === БРОНИРОВАНИЯ (ЗАПИСЬ) ===
+
+async def add_booking_to_db(data: dict, manager_id: int):
+    """Принимает словарь полей и создает запись Booking"""
+    async with async_session() as session:
+        # manager_id берется отдельно, остальные поля из словаря
+        booking = Booking(manager_id=manager_id, **data)
+        session.add(booking)
+        await session.commit()
+        await session.refresh(booking)
+        return booking.id
+
+async def update_booking_row(booking_id: int, row_num: int):
+    """Обновляет номер строки после записи в Google"""
+    async with async_session() as session:
+        b = await session.get(Booking, booking_id)
+        if b:
+            b.sheet_row_number = row_num
+            await session.commit()
+
+async def mark_booking_cancelled(booking_id: int):
+    """Помечает бронь как отмененную"""
+    async with async_session() as session:
+        b = await session.get(Booking, booking_id)
+        if b:
+            b.status = 'cancelled'
+            await session.commit()
+
+# === ИСТОРИЯ И ПОИСК ===
+
+async def get_manager_packages(manager_id: int):
+    """Возвращает список уникальных названий пакетов, которые продал менеджер"""
+    async with async_session() as session:
+        # Select distinct package_name
+        stmt = select(distinct(Booking.package_name)).where(
+            Booking.manager_id == manager_id,
+            Booking.status != 'cancelled'
+        ).order_by(desc(Booking.created_at))
+
+        result = await session.scalars(stmt)
+        return result.all()
+
+async def get_bookings_in_package(manager_id: int, pkg_name: str):
+    """Возвращает всех туристов менеджера в конкретном пакете"""
+    async with async_session() as session:
+        query = select(Booking).where(
+            Booking.manager_id == manager_id,
+            Booking.package_name == pkg_name,
+            Booking.status != 'cancelled'
+        ).order_by(desc(Booking.created_at))
+        result = await session.scalars(query)
+        return result.all()
+
+async def get_booking_by_id(bid: int):
+    async with async_session() as session:
+        return await session.get(Booking, bid)
+
+async def get_all_bookings_for_manager(manager_id: int):
+    """Возвращает все брони менеджера, включая отмененные."""
+    async with async_session() as session:
+        query = select(Booking).where(
+            Booking.manager_id == manager_id
+        ).order_by(desc(Booking.created_at))
+        result = await session.scalars(query)
+        return result.all()
+
+async def get_recent_bookings(limit: int = 30):
+    """Возвращает последние N броней всех менеджеров (для демо-режима)."""
+    async with async_session() as session:
+        query = select(Booking).order_by(desc(Booking.created_at)).limit(limit)
+        result = await session.scalars(query)
+        return result.all()
+
+async def search_tourist_by_name(query_str: str):
+    """Поиск для Отдела Заботы"""
+    async with async_session() as session:
+        clean_query = " ".join((query_str or "").strip().split())
+        if not clean_query:
+            return []
+
+        flex_search = f"%{'%'.join(clean_query.split())}%"
+        compact_search = f"%{clean_query.replace(' ', '')}%"
+
+        last = func.coalesce(Booking.guest_last_name, "")
+        first = func.coalesce(Booking.guest_first_name, "")
+        full_name = func.trim(func.concat(last, " ", first))
+        full_name_rev = func.trim(func.concat(first, " ", last))
+
+        stmt = select(Booking).where(
+            Booking.status != 'cancelled',
+            or_(
+                Booking.guest_last_name.ilike(flex_search),
+                Booking.guest_first_name.ilike(flex_search),
+                full_name.ilike(flex_search),
+                full_name_rev.ilike(flex_search),
+                func.replace(full_name, " ", "").ilike(compact_search),
+                func.replace(full_name_rev, " ", "").ilike(compact_search),
+            )
+        ).order_by(desc(Booking.created_at)).limit(10)
+
+        result = await session.scalars(stmt)
+        return result.all()
+
+async def get_latest_passport_for_person(last_name: str, first_name: str):
+    """Возвращает самый свежий путь к паспорту для паломника по ФИО."""
+    async with async_session() as session:
+        stmt = (
+            select(Booking.passport_image_path)
+            .where(
+                Booking.guest_last_name == last_name,
+                Booking.guest_first_name == first_name,
+                Booking.passport_image_path.isnot(None),
+                Booking.status != 'cancelled'
+            )
+            .order_by(desc(Booking.created_at))
+            .limit(1)
+        )
+        res = await session.scalar(stmt)
+        return res
+
+async def get_db_packages_list(sheet_id: str, sheet_name: str):
+    """Для Отдела Заботы: список пакетов на конкретной дате"""
+    async with async_session() as session:
+        # Ищем уникальные пакеты в базе, у которых совпадает table_id и sheet_name
+        stmt = select(distinct(Booking.package_name)).where(
+            Booking.table_id == sheet_id,
+            Booking.sheet_name == sheet_name,
+            Booking.status != 'cancelled'
+        )
+        result = await session.scalars(stmt)
+        return result.all()
+
+async def get_all_bookings_in_package(sheet_id: str, sheet_name: str, pkg_name: str):
+    """Для Отдела Заботы: все люди в пакете"""
+    async with async_session() as session:
+        query = select(Booking).where(
+            Booking.table_id == sheet_id,
+            Booking.sheet_name == sheet_name,
+            Booking.package_name == pkg_name,
+            Booking.status != 'cancelled'
+        ).order_by(Booking.sheet_row_number)
+        result = await session.scalars(query)
+        return result.all()
+
+# === ОТЧЕТЫ (Admin) ===
+
+async def get_manager_bookings_by_period(manager_id: int, period: str):
+    async with async_session() as session:
+        query = select(Booking).where(Booking.manager_id == manager_id, Booking.status != 'cancelled')
+        now = datetime.now()
+
+        if period == 'today':
+            query = query.where(func.date(Booking.created_at) == now.date())
+        elif period == 'week':
+            query = query.where(Booking.created_at >= now - timedelta(days=7))
+        elif period == 'month':
+            query = query.where(Booking.created_at >= now - timedelta(days=30))
+
+        result = await session.scalars(query.order_by(desc(Booking.created_at)))
+        return result.all()
+
+async def get_bookings_by_package_full(sheet_name: str, pkg_name: str):
+    async with async_session() as session:
+        query = select(Booking).where(
+            Booking.sheet_name == sheet_name,
+            Booking.package_name == pkg_name,
+            Booking.status != 'cancelled'
+        ).order_by(Booking.sheet_row_number)
+        result = await session.scalars(query)
+        return result.all()
+
+# === 4U REQUESTS ===
+
+async def add_4u_request(user_id, name, dates, count, room, table_id):
+    async with async_session() as session:
+        req = Request4U(
+            manager_id=user_id,
+            manager_name=name,
+            dates=dates,
+            pilgrim_count=count,
+            room_type=room,
+            table_id=table_id  # 🔥 Сохраняем ID таблицы
+        )
+        session.add(req)
+        await session.commit()
+        return req.id
+
+async def get_4u_request_by_id(rid):
+    async with async_session() as session:
+        return await session.get(Request4U, rid)
+
+async def close_4u_request(rid):
+    async with async_session() as session:
+        r = await session.get(Request4U, rid)
+        if r: r.status = "done"; await session.commit()
+
+# === RNP ===
+async def get_rnp_by_specific_date(date_obj):
+    async with async_session() as session:
+        return await session.scalar(select(func.count(Booking.id)).where(func.date(Booking.created_at) == date_obj, Booking.status != 'cancelled')) or 0
+
+async def get_rnp_by_date_range(d1, d2):
+    async with async_session() as session:
+        return await session.scalar(select(func.count(Booking.id)).where(func.date(Booking.created_at) >= d1, func.date(Booking.created_at) <= d2, Booking.status != 'cancelled')) or 0
+
+async def get_sales_dynamics_stats(days=10):
+    async with async_session() as session:
+        start = datetime.now().date() - timedelta(days=days)
+        stmt = select(func.date(Booking.created_at).label('d'), func.count(Booking.id)).where(Booking.status != 'cancelled', func.date(Booking.created_at) >= start).group_by('d').order_by('d')
+        res = await session.execute(stmt)
+        return res.all()
+
+async def get_all_bookings_by_period(start_date, end_date):
+    """Все брони всех менеджеров за период"""
+    async with async_session() as session:
+        query = select(Booking).where(
+            Booking.status != 'cancelled',
+            func.date(Booking.created_at) >= start_date,
+            func.date(Booking.created_at) <= end_date
+        ).order_by(desc(Booking.created_at))
+        result = await session.scalars(query)
+        return result.all()
+
+async def get_last_n_bookings_by_manager(manager_id: int, limit=10, include_cancelled: bool = False):
+    """Последние N броней менеджера (по умолчанию без отменённых)."""
+    async with async_session() as session:
+        query = select(Booking).where(Booking.manager_id == manager_id)
+        if not include_cancelled:
+            query = query.where(Booking.status != 'cancelled')
+        query = query.order_by(desc(Booking.created_at)).limit(limit)
+        result = await session.scalars(query)
+        return result.all()
+
+async def get_active_4u_requests():
+    """Возвращает все заявки со статусом 'pending'"""
+    async with async_session() as session:
+        # Сортируем: новые сверху (или уберите .order_by..., если хотите старые сверху)
+        query = select(Request4U).where(Request4U.status == 'pending').order_by(desc(Request4U.created_at))
+        result = await session.scalars(query)
+        return result.all()
+async def get_detailed_stats_by_period(start_date, end_date):
+    """
+    Сложный отчет:
+    1. Общее кол-во
+    2. Топ 10 пакетов (ИЗМЕНИЛИ ЛИМИТ)
+    3. Статистика по каждому менеджеру
+    """
+    async with async_session() as session:
+        # 1. Общее
+        total = await session.scalar(
+            select(func.count(Booking.id)).where(
+                Booking.status != 'cancelled',
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date
+            )
+        ) or 0
+
+        # 2. Топ 10 Пакетов (LIMIT 10)
+        top_pkg_stmt = (
+            select(Booking.package_name, func.count(Booking.id).label('cnt'))
+            .where(
+                Booking.status != 'cancelled',
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date
+            )
+            .group_by(Booking.package_name)
+            .order_by(desc('cnt'))
+            .limit(10) # <--- БЫЛО 3, СТАЛО 10
+        )
+        top_pkgs = (await session.execute(top_pkg_stmt)).all()
+
+        # 3. Менеджеры
+        man_stmt = (
+            select(Booking.manager_name_text, func.count(Booking.id).label('cnt'))
+            .where(
+                Booking.status != 'cancelled',
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date
+            )
+            .group_by(Booking.manager_name_text)
+            .order_by(desc('cnt'))
+        )
+        managers_stat = (await session.execute(man_stmt)).all()
+
+        return {
+            "total": total,
+            "top_packages": top_pkgs,
+            "managers": managers_stat
+        }
+
+async def get_bookings_by_manager_date_range(manager_id: int, start_date, end_date):
+    """
+    Ищет брони конкретного менеджера в диапазоне дат (включительно).
+    Используется админом при выборе кастомного периода.
+    """
+    async with async_session() as session:
+        query = select(Booking).where(
+            Booking.manager_id == manager_id,
+            Booking.status != 'cancelled',
+            func.date(Booking.created_at) >= start_date,
+            func.date(Booking.created_at) <= end_date
+        ).order_by(desc(Booking.created_at))
+
+        result = await session.scalars(query)
+        return result.all()
+
+async def get_4u_request_by_id(req_id: int):
+    async with async_session() as session:
+        return await session.get(Request4U, req_id)
+
+async def update_4u_status(req_id: int, status: str, sheet_name: str = None):
+    async with async_session() as session:
+        req = await session.get(Request4U, req_id)
+        if req:
+            req.status = status
+            if sheet_name: req.created_sheet_name = sheet_name
+            await session.commit()
+
+# === РАСШИРЕННАЯ АНАЛИТИКА ДЛЯ АДМИН WEBAPP ===
+
+async def get_full_analytics(start_date, end_date):
+    """
+    Полная аналитика для админ панели:
+    - Общая статистика
+    - ТОП пакетов (все)
+    - Рейтинг менеджеров
+    - Статистика отмен
+    - Самые популярные направления
+    """
+    async with async_session() as session:
+        # 1. Общая статистика
+        total_bookings = await session.scalar(
+            select(func.count(Booking.id)).where(
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date,
+                Booking.status != 'cancelled'
+            )
+        ) or 0
+
+        total_cancelled = await session.scalar(
+            select(func.count(Booking.id)).where(
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date,
+                Booking.status == 'cancelled'
+            )
+        ) or 0
+
+        # 2. ТОП пакетов (ВСЕ)
+        top_packages_stmt = (
+            select(Booking.package_name, func.count(Booking.id).label('cnt'))
+            .where(
+                Booking.status != 'cancelled',
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date
+            )
+            .group_by(Booking.package_name)
+            .order_by(desc('cnt'))
+        )
+        top_packages = (await session.execute(top_packages_stmt)).all()
+
+        # 3. Рейтинг менеджеров
+        from sqlalchemy import case
+        managers_stmt = (
+            select(
+                Booking.manager_name_text,
+                func.count(Booking.id).label('total'),
+                func.sum(
+                    case((Booking.status == 'cancelled', 1), else_=0)
+                ).label('cancelled_count')
+            )
+            .where(
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date
+            )
+            .group_by(Booking.manager_name_text)
+            .order_by(desc('total'))
+        )
+        managers_rating = (await session.execute(managers_stmt)).all()
+
+        # 4. Популярные типы номеров
+        rooms_stmt = (
+            select(Booking.room_type, func.count(Booking.id).label('cnt'))
+            .where(
+                Booking.status != 'cancelled',
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date
+            )
+            .group_by(Booking.room_type)
+            .order_by(desc('cnt'))
+        )
+        popular_rooms = (await session.execute(rooms_stmt)).all()
+
+        # 5. Дневная динамика
+        daily_stmt = (
+            select(
+                func.date(Booking.created_at).label('date'),
+                func.count(Booking.id).label('count')
+            )
+            .where(
+                Booking.status != 'cancelled',
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date
+            )
+            .group_by('date')
+            .order_by('date')
+        )
+        daily_dynamics = (await session.execute(daily_stmt)).all()
+
+        return {
+            "total_bookings": total_bookings,
+            "total_cancelled": total_cancelled,
+            "cancellation_rate": round((total_cancelled / (total_bookings + total_cancelled) * 100), 2) if (total_bookings + total_cancelled) > 0 else 0,
+            "top_packages": [(name, cnt) for name, cnt in top_packages],
+            "managers_rating": [(name, total, cancelled or 0) for name, total, cancelled in managers_rating],
+            "popular_rooms": [(room, cnt) for room, cnt in popular_rooms],
+            "daily_dynamics": [(str(date), cnt) for date, cnt in daily_dynamics]
+        }
+
+async def get_manager_detailed_stats(manager_id: int, start_date, end_date):
+    """Детальная статистика по конкретному менеджеру"""
+    async with async_session() as session:
+        # Все брони
+        bookings = await session.scalars(
+            select(Booking).where(
+                Booking.manager_id == manager_id,
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date
+            ).order_by(desc(Booking.created_at))
+        )
+        all_bookings = bookings.all()
+
+        # Активные
+        active_count = sum(1 for b in all_bookings if b.status != 'cancelled')
+        # Отмененные
+        cancelled_count = sum(1 for b in all_bookings if b.status == 'cancelled')
+
+        # ТОП пакетов этого менеджера
+        top_packages_stmt = (
+            select(Booking.package_name, func.count(Booking.id).label('cnt'))
+            .where(
+                Booking.manager_id == manager_id,
+                Booking.status != 'cancelled',
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date
+            )
+            .group_by(Booking.package_name)
+            .order_by(desc('cnt'))
+        )
+        manager_top_packages = (await session.execute(top_packages_stmt)).all()
+
+        return {
+            "total": len(all_bookings),
+            "active": active_count,
+            "cancelled": cancelled_count,
+            "top_packages": [(name, cnt) for name, cnt in manager_top_packages],
+            "bookings": all_bookings
+        }
+
+async def search_packages_by_date(date_str: str):
+    """Поиск пакетов по дате (для админа)"""
+    async with async_session() as session:
+        # Ищем по sheet_name (содержит дату)
+        search = f"%{date_str}%"
+        packages_stmt = (
+            select(
+                Booking.sheet_name,
+                Booking.package_name,
+                func.count(Booking.id).label('cnt')
+            )
+            .where(
+                Booking.sheet_name.like(search),
+                Booking.status != 'cancelled'
+            )
+            .group_by(Booking.sheet_name, Booking.package_name)
+            .order_by(desc('cnt'))
+        )
+        results = (await session.execute(packages_stmt)).all()
+        return [(sheet, pkg, cnt) for sheet, pkg, cnt in results]
+
+async def get_all_bookings_for_period(start_date, end_date):
+    """Получение всех броней за период (для админа)"""
+    async with async_session() as session:
+        bookings = await session.scalars(
+            select(Booking).where(
+                func.date(Booking.created_at) >= start_date,
+                func.date(Booking.created_at) <= end_date
+            ).order_by(desc(Booking.created_at))
+        )
+        return bookings.all()

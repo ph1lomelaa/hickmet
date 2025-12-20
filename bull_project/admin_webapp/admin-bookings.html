@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📋 Список броней - Hickmet Premium</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        :root {
+            --bg-primary: #FAF8F5;
+            --bg-secondary: #F5F1EB;
+            --bg-card: #FFFFFF;
+            --accent-brown: #9B8474;
+            --accent-dark: #6B5D52;
+            --accent-light: #C4B5A7;
+            --text-primary: #3D3935;
+            --text-secondary: #8A827C;
+            --border-color: #E8E3DC;
+            --shadow-soft: 0 4px 12px rgba(107, 93, 82, 0.08);
+            --shadow-medium: 0 8px 24px rgba(107, 93, 82, 0.12);
+            --success-bg: #E8F5E9;
+            --success-text: #2E7D32;
+            --warning-bg: #FFF3E0;
+            --warning-text: #E65100;
+            --danger-bg: #FFEBEE;
+            --danger-text: #C62828;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            padding: 20px;
+            padding-bottom: 60px;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            border-radius: 20px;
+            padding: 30px 20px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-medium);
+            text-align: center;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.95;
+        }
+
+        /* Период и фильтры */
+        .period-selector {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .period-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-brown);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .date-inputs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .date-input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 15px;
+            font-family: inherit;
+            outline: none;
+        }
+
+        .date-input:focus {
+            border-color: var(--accent-brown);
+            background-color: #FFFFFF;
+        }
+
+        .quick-period-btns {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .period-btn {
+            padding: 10px 18px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .period-btn:hover {
+            border-color: var(--accent-light);
+            transform: translateY(-1px);
+        }
+
+        .load-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border: none;
+            border-radius: 14px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(107, 93, 82, 0.2);
+        }
+
+        .load-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(107, 93, 82, 0.3);
+        }
+
+        /* Статистика */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            text-align: center;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .stat-number {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent-dark);
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Фильтры по статусу */
+        .status-filters {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .filter-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .filter-tab {
+            padding: 10px 18px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .filter-tab:hover {
+            border-color: var(--accent-light);
+            transform: translateY(-1px);
+        }
+
+        .filter-tab.active {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border-color: var(--accent-dark);
+        }
+
+        /* Список броней */
+        .bookings-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .booking-card {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: var(--shadow-soft);
+            transition: all 0.3s ease;
+        }
+
+        .booking-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-medium);
+            border-color: var(--accent-light);
+        }
+
+        .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+
+        .booking-guest {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-dark);
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .status-active {
+            background: var(--success-bg);
+            color: var(--success-text);
+        }
+
+        .status-cancelled {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+        }
+
+        .status-rescheduled {
+            background: var(--warning-bg);
+            color: var(--warning-text);
+        }
+
+        .booking-details {
+            display: grid;
+            gap: 8px;
+        }
+
+        .passport-image {
+            width: 100%;
+            border-radius: 12px;
+            border: 2px solid var(--border-color);
+            margin-bottom: 12px;
+            object-fit: cover;
+        }
+
+        .booking-detail {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .booking-detail strong {
+            color: var(--text-primary);
+            margin-left: 4px;
+        }
+
+        .details-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-dark);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 12px 0;
+        }
+
+        .details-btn:hover {
+            border-color: var(--accent-light);
+            transform: translateY(-1px);
+        }
+
+        .details-btn.active {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border-color: var(--accent-dark);
+        }
+
+        .booking-details-full {
+            display: none;
+            padding: 12px 0;
+            border-top: 1px dashed rgba(0,0,0,0.1);
+        }
+
+        .booking-details-full.show {
+            display: block;
+        }
+
+        .details-section {
+            margin-bottom: 12px;
+        }
+
+        .details-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .manager-tag {
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            font-size: 13px;
+            color: var(--accent-dark);
+            font-weight: 600;
+        }
+
+        /* Загрузка */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--accent-brown);
+        }
+
+        .spinner {
+            border: 3px solid var(--border-color);
+            border-top: 3px solid var(--accent-brown);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <!-- Заголовок -->
+    <div class="header">
+        <h1>Hickmet Premium</h1>
+        <p>Список броней</p>
+    </div>
+
+    <!-- Выбор периода -->
+    <div class="period-selector">
+        <div class="period-label">Выберите период</div>
+
+        <div class="date-inputs">
+            <input type="date" id="start-date" class="date-input">
+            <input type="date" id="end-date" class="date-input">
+        </div>
+
+        <div class="quick-period-btns">
+            <button class="period-btn" onclick="setQuickPeriod('today')">Сегодня</button>
+            <button class="period-btn" onclick="setQuickPeriod('week')">Неделя</button>
+            <button class="period-btn" onclick="setQuickPeriod('month')">Месяц</button>
+        </div>
+
+        <button class="load-btn" onclick="loadBookings()">Загрузить брони</button>
+    </div>
+
+    <!-- Статистика -->
+    <div class="stats-grid" id="stats-grid" style="display: none;">
+        <div class="stat-card">
+            <div class="stat-number" id="total-count">0</div>
+            <div class="stat-label">Всего</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="active-count">0</div>
+            <div class="stat-label">Активные</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="cancelled-count">0</div>
+            <div class="stat-label">Отменено</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="rescheduled-count">0</div>
+            <div class="stat-label">Перенос</div>
+        </div>
+    </div>
+
+    <!-- Фильтры по статусу -->
+    <div class="status-filters" id="status-filters" style="display: none;">
+        <div class="filter-tabs">
+            <button class="filter-tab active" onclick="filterByStatus('all')">Все</button>
+            <button class="filter-tab" onclick="filterByStatus('new')">Активные</button>
+            <button class="filter-tab" onclick="filterByStatus('cancelled')">Отмена</button>
+            <button class="filter-tab" onclick="filterByStatus('rescheduled')">Перенос</button>
+        </div>
+    </div>
+
+    <!-- Список броней -->
+    <div id="bookings-container"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const API_BASE = 'https://gainless-computably-pablo.ngrok-free.dev';
+        let allBookings = [];
+        let currentFilter = 'all';
+
+        const normalizeStatus = (value) => (value || '').toLowerCase();
+        const formatDateTime = (value) => {
+            if (!value) return '-';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return value;
+            const dateStr = date.toLocaleDateString('ru-RU');
+            const timeStr = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            return `${dateStr} ${timeStr}`;
+        };
+        const safeText = (value, fallback = '-') => {
+            if (value === null || value === undefined) return fallback;
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                return trimmed === '' || trimmed === '-' ? fallback : trimmed;
+            }
+            return value !== '' ? value : fallback;
+        };
+        const safeValue = safeText;
+
+        // Обёртка для fetch с заголовками ngrok
+        async function apiFetch(url, options = {}) {
+            const headers = {
+                'ngrok-skip-browser-warning': '1',
+                ...options.headers
+            };
+            return fetch(url, { ...options, headers });
+        }
+
+        // Установка быстрого периода
+        function setQuickPeriod(period) {
+            const today = new Date();
+            const endDate = today.toISOString().split('T')[0];
+            let startDate;
+
+            if (period === 'today') {
+                startDate = endDate;
+            } else if (period === 'week') {
+                const weekAgo = new Date(today);
+                weekAgo.setDate(today.getDate() - 7);
+                startDate = weekAgo.toISOString().split('T')[0];
+            } else if (period === 'month') {
+                const monthAgo = new Date(today);
+                monthAgo.setMonth(today.getMonth() - 1);
+                startDate = monthAgo.toISOString().split('T')[0];
+            }
+
+            document.getElementById('start-date').value = startDate;
+            document.getElementById('end-date').value = endDate;
+        }
+
+        // Загрузка броней
+        async function loadBookings() {
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+
+            if (!startDate || !endDate) {
+                tg.showAlert('Выберите период!');
+                return;
+            }
+
+            const container = document.getElementById('bookings-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Загрузка броней...</p></div>';
+
+            try {
+                const response = await apiFetch(`${API_BASE}/api/admin/bookings?start_date=${startDate}&end_date=${endDate}`);
+                const data = await response.json();
+
+                if (data.ok) {
+                    allBookings = data.bookings;
+                    updateStats();
+                    renderBookings();
+                    document.getElementById('stats-grid').style.display = 'grid';
+                    document.getElementById('status-filters').style.display = 'block';
+                } else {
+                    container.innerHTML = '<div class="empty-state"><p>Ошибка загрузки данных</p></div>';
+                }
+            } catch (error) {
+                console.error(error);
+                container.innerHTML = '<div class="empty-state"><p>Ошибка соединения с сервером</p></div>';
+            }
+        }
+
+        // Обновление статистики
+        function updateStats() {
+            const total = allBookings.length;
+            const active = allBookings.filter(b => normalizeStatus(b.status) === 'new').length;
+            const cancelled = allBookings.filter(b => normalizeStatus(b.status) === 'cancelled').length;
+            const rescheduled = allBookings.filter(b => normalizeStatus(b.status) === 'rescheduled').length;
+
+            document.getElementById('total-count').textContent = total;
+            document.getElementById('active-count').textContent = active;
+            document.getElementById('cancelled-count').textContent = cancelled;
+            document.getElementById('rescheduled-count').textContent = rescheduled;
+        }
+
+        // Отображение броней
+        function renderBookings() {
+            const container = document.getElementById('bookings-container');
+            let filtered = allBookings;
+
+            if (currentFilter !== 'all') {
+                filtered = allBookings.filter(b => normalizeStatus(b.status) === currentFilter);
+            }
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>Броней не найдено</p></div>';
+                return;
+            }
+
+            const cards = filtered.map((booking, index) => {
+                const status = normalizeStatus(booking.status);
+                const statusClass = status === 'cancelled'
+                    ? 'status-cancelled'
+                    : status === 'rescheduled'
+                        ? 'status-rescheduled'
+                        : 'status-active';
+                const statusTextMap = {
+                    cancelled: 'ОТМЕНЕНО',
+                    rescheduled: 'ПЕРЕНОС',
+                    new: 'АКТИВНА'
+                };
+                const statusText = statusTextMap[status] || (status ? status.toUpperCase() : 'АКТИВНА');
+
+                const createdLabel = formatDateTime(booking.created_at);
+                const guestNameRaw = `${booking.guest_last_name || ''} ${booking.guest_first_name || ''}`.trim();
+                const guestName = guestNameRaw ? guestNameRaw : 'Без имени';
+                const packageName = safeValue(booking.package_name);
+                const sheetName = safeValue(booking.sheet_name);
+                const roomType = safeValue(booking.room_type || booking.placement_type);
+                const phone = safeValue(booking.client_phone);
+                const price = safeValue(booking.price);
+                const priceLabel = price === '-' ? '-' : `${price} тг`;
+                const amountPaid = safeValue(booking.amount_paid);
+                const comment = booking.comment && booking.comment.trim() !== '' ? booking.comment : '-';
+                const managerName = safeValue(booking.manager_name || booking.manager_name_text);
+                const gender = booking.gender === 'F' ? 'Женский' : 'Мужской';
+                const dateOfBirth = safeValue(booking.date_of_birth);
+                const passportNum = safeValue(booking.passport_num);
+                const passportExpiry = safeValue(booking.passport_expiry);
+                const iin = safeValue(booking.guest_iin);
+                const mealType = safeValue(booking.meal_type);
+                const visaStatus = safeValue(booking.visa_status);
+                const avia = safeValue(booking.avia);
+                const train = safeValue(booking.train);
+                const departureCity = safeValue(booking.departure_city);
+                const region = safeValue(booking.region);
+                const source = safeValue(booking.source);
+                const sheetRow = booking.sheet_row_number != null ? booking.sheet_row_number : '-';
+
+                const passportImage = booking.passport_image_path;
+
+                let html = `
+                    <div class="booking-card">
+                        <div class="booking-header">
+                            <div class="booking-guest">👤 ${guestName}</div>
+                            <span class="status-badge ${statusClass}">${statusText}</span>
+                        </div>
+                `;
+
+                if (passportImage) {
+                    html += `
+                        <img
+                            src="${API_BASE}/api/care/passport-photo/${booking.id}?ngrok-skip-browser-warning=1"
+                            alt="Паспорт"
+                            class="passport-image"
+                            onerror="this.style.display='none'"
+                        >
+                    `;
+                }
+
+                html += `
+                        <div class="booking-details">
+                            <div class="booking-detail">Телефон: <strong>${phone}</strong></div>
+                            <div class="booking-detail">Пакет: <strong>${packageName}</strong></div>
+                            <div class="booking-detail">Дата: <strong>${sheetName}</strong></div>
+                            <div class="booking-detail">Комната: <strong>${roomType}</strong></div>
+                            <div class="booking-detail">Строка листа: <strong>${sheetRow}</strong></div>
+                        </div>
+
+                        <button class="details-btn" onclick="toggleDetails('details-${index}', this)">
+                            📋 Подробнее
+                        </button>
+
+                        <div class="booking-details-full" id="details-${index}">
+                            <div class="details-section">
+                                <div class="details-section-title">Паспортные данные</div>
+                                <div class="booking-detail">Пол: <strong>${gender}</strong></div>
+                                <div class="booking-detail">Дата рождения: <strong>${dateOfBirth}</strong></div>
+                                <div class="booking-detail">Номер паспорта: <strong>${passportNum}</strong></div>
+                                <div class="booking-detail">Срок действия: <strong>${passportExpiry}</strong></div>
+                                <div class="booking-detail">ИИН: <strong>${iin}</strong></div>
+                            </div>
+
+                            <div class="details-section">
+                                <div class="details-section-title">Детали тура</div>
+                                <div class="booking-detail">Питание: <strong>${mealType}</strong></div>
+                                <div class="booking-detail">Регион: <strong>${region}</strong></div>
+                                <div class="booking-detail">Город вылета: <strong>${departureCity}</strong></div>
+                                <div class="booking-detail">Источник: <strong>${source}</strong></div>
+                                <div class="booking-detail">Виза: <strong>${visaStatus}</strong></div>
+                                ${avia !== '-' ? `<div class="booking-detail">Авиа: <strong>${avia}</strong></div>` : ''}
+                                ${train !== '-' ? `<div class="booking-detail">Поезд: <strong>${train}</strong></div>` : ''}
+                            </div>
+
+                            <div class="details-section">
+                                <div class="details-section-title">Финансы</div>
+                                <div class="booking-detail">Цена: <strong>${priceLabel}</strong></div>
+                                <div class="booking-detail">Оплачено: <strong>${amountPaid}</strong></div>
+                            </div>
+
+                            <div class="details-section">
+                                <div class="details-section-title">Комментарий</div>
+                                <div class="booking-detail">${comment === '-' ? '—' : comment}</div>
+                            </div>
+
+                            <div class="details-section">
+                                <div class="booking-detail">Менеджер: <strong>${managerName}</strong></div>
+                                <div class="booking-detail">Создано: <strong>${createdLabel}</strong></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                return html;
+            }).join('');
+
+            container.innerHTML = `<div class="bookings-container">${cards}</div>`;
+        }
+
+        // Фильтрация по статусу
+        function filterByStatus(status) {
+            currentFilter = status;
+
+            // Обновляем активную вкладку
+            document.querySelectorAll('.filter-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            renderBookings();
+        }
+
+        function toggleDetails(detailId, btnElement) {
+            const details = document.getElementById(detailId);
+            if (!details) return;
+            const button = btnElement || event.currentTarget;
+            if (details.classList.contains('show')) {
+                details.classList.remove('show');
+                button.classList.remove('active');
+                button.innerHTML = '📋 Подробнее';
+            } else {
+                details.classList.add('show');
+                button.classList.add('active');
+                button.innerHTML = '🔼 Скрыть';
+            }
+        }
+
+        // Инициализация
+        window.addEventListener('load', () => {
+            setQuickPeriod('today');
+            loadBookings();
+        });
+    </script>
+</body>
+</html>

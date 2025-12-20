@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Поиск паломника - Hickmet Premium</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/assets/config.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        :root {
+            --bg-primary: #FAF8F5;
+            --bg-secondary: #F5F1EB;
+            --bg-card: #FFFFFF;
+            --accent-brown: #9B8474;
+            --accent-dark: #6B5D52;
+            --accent-light: #C4B5A7;
+            --text-primary: #3D3935;
+            --text-secondary: #8A827C;
+            --border-color: #E8E3DC;
+            --shadow-soft: 0 4px 12px rgba(107, 93, 82, 0.08);
+            --shadow-medium: 0 8px 24px rgba(107, 93, 82, 0.12);
+            --success-bg: #E8F5E9;
+            --success-text: #2E7D32;
+            --danger-bg: #FFEBEE;
+            --danger-text: #C62828;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            padding: 20px;
+            padding-bottom: 60px;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            border-radius: 20px;
+            padding: 30px 20px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-medium);
+            text-align: center;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.95;
+        }
+
+        .search-container {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 14px 16px;
+            font-size: 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-family: inherit;
+            outline: none;
+            margin-bottom: 12px;
+        }
+
+        .search-input:focus {
+            border-color: var(--accent-brown);
+            background-color: #FFFFFF;
+        }
+
+        .search-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border: none;
+            border-radius: 14px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(107, 93, 82, 0.2);
+        }
+
+        .search-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(107, 93, 82, 0.3);
+        }
+
+        .search-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--accent-brown);
+        }
+
+        .spinner {
+            border: 3px solid var(--border-color);
+            border-top: 3px solid var(--accent-brown);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .no-results-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .results-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .booking-card {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: var(--shadow-soft);
+            transition: all 0.3s ease;
+        }
+
+        .booking-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-medium);
+            border-color: var(--accent-light);
+        }
+
+        .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+
+        .booking-guest {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-dark);
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .status-active {
+            background: var(--success-bg);
+            color: var(--success-text);
+        }
+
+        .status-cancelled {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+        }
+
+        .booking-preview {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .booking-detail {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .booking-detail strong {
+            color: var(--text-primary);
+            margin-left: 4px;
+        }
+
+        .passport-image {
+            width: 100%;
+            max-height: 300px;
+            object-fit: contain;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            background: var(--bg-secondary);
+            padding: 8px;
+        }
+
+        .details-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-dark);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .details-btn:hover {
+            border-color: var(--accent-light);
+            transform: translateY(-1px);
+        }
+
+        .details-btn.active {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border-color: var(--accent-dark);
+        }
+
+        .booking-details-full {
+            display: none;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 2px solid var(--border-color);
+        }
+
+        .booking-details-full.show {
+            display: block;
+        }
+
+        .details-section {
+            margin-bottom: 16px;
+        }
+
+        .details-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .details-section-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-brown);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .manager-tag {
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            font-size: 13px;
+            color: var(--accent-dark);
+            font-weight: 600;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Hickmet Premium</h1>
+        <p>Поиск паломника</p>
+    </div>
+
+    <div class="search-container">
+        <input
+            type="text"
+            class="search-input"
+            id="searchInput"
+            placeholder="Введите имя или фамилию..."
+            autocomplete="off"
+        >
+        <button class="search-btn" id="searchBtn" onclick="searchPilgrim()">
+            🔍 Найти
+        </button>
+    </div>
+
+    <div id="loadingDiv" class="loading hidden">
+        <div class="spinner"></div>
+        <p>Поиск...</p>
+    </div>
+
+    <div id="errorDiv" class="error-message hidden"></div>
+
+    <div id="noResultsDiv" class="no-results hidden">
+        <div class="no-results-icon">😔</div>
+        <p>Никого не найдено</p>
+    </div>
+
+    <div id="resultsContainer" class="results-container hidden"></div>
+
+    <script>
+        const API_URL = window.BULL_API_URL;
+        const tg = window.Telegram.WebApp;
+
+        tg.ready();
+        tg.expand();
+
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchPilgrim();
+            }
+        });
+
+        async function searchPilgrim() {
+            const query = document.getElementById('searchInput').value.trim();
+
+            if (!query || query.length < 2) {
+                showError('Введите минимум 2 символа');
+                return;
+            }
+
+            hideAll();
+            document.getElementById('loadingDiv').classList.remove('hidden');
+            document.getElementById('searchBtn').disabled = true;
+
+            try {
+                const response = await fetch(`${API_URL}/api/care/search?query=${encodeURIComponent(query)}`, {
+                    headers: {"ngrok-skip-browser-warning": "1"}
+                });
+                const data = await response.json();
+
+                hideAll();
+                document.getElementById('searchBtn').disabled = false;
+
+                if (!data.ok) {
+                    showError(data.error || 'Ошибка поиска');
+                    return;
+                }
+
+                if (!data.results || data.results.length === 0) {
+                    document.getElementById('noResultsDiv').classList.remove('hidden');
+                    return;
+                }
+
+                console.log('📊 Результаты поиска:', data.results);
+                displayResults(data.results);
+
+            } catch (error) {
+                console.error('Search error:', error);
+                hideAll();
+                document.getElementById('searchBtn').disabled = false;
+                showError('Ошибка подключения к серверу');
+            }
+        }
+
+        function displayResults(results) {
+            const container = document.getElementById('resultsContainer');
+            container.classList.remove('hidden');
+            container.innerHTML = '';
+
+            results.forEach((booking, index) => {
+                const card = document.createElement('div');
+                card.className = 'booking-card';
+
+                const status = booking.status || 'new';
+                const statusClass = status === 'cancelled' ? 'status-cancelled' : 'status-active';
+                const statusText = status === 'cancelled' ? 'Отменена' : 'Активная';
+
+                const guestName = `${booking.last_name} ${booking.first_name}`.trim() || 'Без имени';
+
+                let html = `
+                    <div class="booking-header">
+                        <div class="booking-guest">${guestName}</div>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                `;
+
+                // Фото паспорта
+                console.log(`Booking ID: ${booking.id}, passport_image_path: ${booking.passport_image_path}`);
+
+                if (booking.passport_image_path) {
+                    const photoUrl = `${API_URL}/api/care/passport-photo/${booking.id}`;
+                    console.log(`Загрузка паспорта с URL: ${photoUrl}`);
+
+                    html += `
+                        <div class="passport-container">
+                            <img
+                                src="${photoUrl}"
+                                alt="Паспорт"
+                                class="passport-image"
+                                onerror="console.error('❌ Ошибка загрузки паспорта для booking ${booking.id}'); this.style.display='none';"
+                                onload="console.log('✅ Паспорт успешно загружен для booking ${booking.id}');"
+                            >
+                        </div>
+                    `;
+                } else {
+                    console.log(`⚠️ У паломника ${booking.last_name} ${booking.first_name} нет паспорта в БД`);
+                }
+
+                // Краткий превью
+                html += `
+                    <div class="booking-preview">
+                        <div class="booking-detail">
+                            📞 Телефон: <strong>${booking.phone}</strong>
+                        </div>
+                        <div class="booking-detail">
+                            📦 Пакет: <strong>${booking.package_name}</strong>
+                        </div>
+                        <div class="booking-detail">
+                            📅 Дата: <strong>${booking.sheet_name}</strong>
+                        </div>
+                        <div class="booking-detail">
+                            🏠 Комната: <strong>${booking.room_type}</strong>
+                        </div>
+                    </div>
+
+                    <button class="details-btn" onclick="toggleDetails(${index})">
+                        📋 Подробнее
+                    </button>
+
+                    <div class="booking-details-full" id="details-${index}">
+                        <div class="details-section">
+                            <div class="details-section-title">Паспортные данные</div>
+                            <div class="booking-detail">Пол: <strong>${booking.gender}</strong></div>
+                            <div class="booking-detail">Дата рождения: <strong>${booking.date_of_birth}</strong></div>
+                            <div class="booking-detail">Номер паспорта: <strong>${booking.passport_num}</strong></div>
+                            <div class="booking-detail">Срок действия: <strong>${booking.passport_expiry}</strong></div>
+                            <div class="booking-detail">ИИН: <strong>${booking.iin}</strong></div>
+                        </div>
+
+                        <div class="details-section">
+                            <div class="details-section-title">Детали тура</div>
+                            <div class="booking-detail">Питание: <strong>${booking.meal_type}</strong></div>
+                            <div class="booking-detail">Цена: <strong>${booking.price}</strong></div>
+                            <div class="booking-detail">Оплачено: <strong>${booking.amount_paid}</strong></div>
+                `;
+
+                if (booking.visa_status && booking.visa_status !== '-') {
+                    html += `<div class="booking-detail">Виза: <strong>${booking.visa_status}</strong></div>`;
+                }
+                if (booking.avia && booking.avia !== '-') {
+                    html += `<div class="booking-detail">Авиа: <strong>${booking.avia}</strong></div>`;
+                }
+                if (booking.train && booking.train !== '-') {
+                    html += `<div class="booking-detail">Поезд: <strong>${booking.train}</strong></div>`;
+                }
+                if (booking.region && booking.region !== '-') {
+                    html += `<div class="booking-detail">Регион: <strong>${booking.region}</strong></div>`;
+                }
+                if (booking.departure_city && booking.departure_city !== '-') {
+                    html += `<div class="booking-detail">Город вылета: <strong>${booking.departure_city}</strong></div>`;
+                }
+                if (booking.source && booking.source !== '-') {
+                    html += `<div class="booking-detail">Источник: <strong>${booking.source}</strong></div>`;
+                }
+
+                html += `</div>`;
+
+                if (booking.comment && booking.comment !== '') {
+                    html += `
+                        <div class="details-section">
+                            <div class="details-section-title">Комментарий</div>
+                            <div class="booking-detail">${booking.comment}</div>
+                        </div>
+                    `;
+                }
+
+                html += `
+                        <div class="manager-tag">
+                            Менеджер: ${booking.manager_name}
+                        </div>
+                    </div>
+                `;
+
+                card.innerHTML = html;
+                container.appendChild(card);
+            });
+        }
+
+        function toggleDetails(index) {
+            const detailsDiv = document.getElementById(`details-${index}`);
+            const btn = event.target;
+
+            if (detailsDiv.classList.contains('show')) {
+                detailsDiv.classList.remove('show');
+                btn.classList.remove('active');
+                btn.innerHTML = '📋 Подробнее';
+            } else {
+                detailsDiv.classList.add('show');
+                btn.classList.add('active');
+                btn.innerHTML = '🔼 Скрыть';
+            }
+        }
+
+        function hideAll() {
+            document.getElementById('loadingDiv').classList.add('hidden');
+            document.getElementById('errorDiv').classList.add('hidden');
+            document.getElementById('noResultsDiv').classList.add('hidden');
+            document.getElementById('resultsContainer').classList.add('hidden');
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorDiv');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            setTimeout(() => {
+                errorDiv.classList.add('hidden');
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

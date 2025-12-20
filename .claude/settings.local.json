@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(lsof:*)",
+      "Bash(curl:*)",
+      "Bash(cd /Users/muslimakosmagambetova/Downloads/tired2\\\\ 2/bull_project && python:*)",
+      "Bash(cd /Users/muslimakosmagambetova/Downloads/tired2\\\\ 2/bull_project && python3:*)",
+      "Bash(source:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(kill:*)",
+      "Bash(xargs kill:*)"
+    ]
+  }
+}

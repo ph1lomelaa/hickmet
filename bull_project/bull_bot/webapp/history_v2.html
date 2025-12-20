@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📋 История бронирований</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/assets/config.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        :root {
+            --bg-primary: #FAF8F5;
+            --bg-secondary: #F5F1EB;
+            --bg-card: #FFFFFF;
+            --accent-brown: #9B8474;
+            --accent-dark: #6B5D52;
+            --accent-light: #C4B5A7;
+            --text-primary: #3D3935;
+            --text-secondary: #8A827C;
+            --border-color: #E8E3DC;
+            --shadow-soft: 0 4px 12px rgba(107, 93, 82, 0.08);
+            --shadow-medium: 0 8px 24px rgba(107, 93, 82, 0.12);
+            --success-bg: #E8F5E9;
+            --success-text: #2E7D32;
+            --danger-bg: #FFEBEE;
+            --danger-text: #C62828;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            padding: 20px;
+            padding-bottom: 60px;
+            min-height: 100vh;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--border-color);
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent-dark);
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            text-align: center;
+            box-shadow: var(--shadow-soft);
+            transition: all 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-medium);
+        }
+        
+        .stat-number {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent-dark);
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .controls {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-soft);
+        }
+        
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        
+        .search-input {
+            flex: 1;
+            padding: 14px 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 14px;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 16px;
+            font-family: inherit;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        
+        .search-input:focus {
+            border-color: var(--accent-brown);
+            background-color: #FFFFFF;
+        }
+        
+        .search-btn {
+            padding: 12px 20px;
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(107, 93, 82, 0.2);
+        }
+        
+        .filter-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+        
+        .filter-tab {
+            padding: 9px 16px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .filter-tab.active {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border-color: var(--accent-dark);
+        }
+        
+        .packages-filter {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .packages-filter-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-brown);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .packages-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 260px;
+            overflow-y: auto;
+        }
+        
+        .package-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .package-item:hover {
+            border-color: var(--accent-light);
+            transform: translateX(4px);
+            box-shadow: var(--shadow-soft);
+        }
+        
+        .package-item.active {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            border-color: var(--accent-dark);
+            color: white;
+        }
+        
+        .package-name {
+            font-size: 14px;
+            font-weight: 600;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .package-count {
+            margin-left: 12px;
+            padding: 4px 12px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--accent-dark);
+        }
+        
+        #bookings-container {
+            margin-top: 10px;
+        }
+        
+        .booking-card {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: var(--shadow-soft);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .booking-card + .booking-card {
+            margin-top: 12px;
+        }
+        
+        .booking-card:hover {
+            box-shadow: var(--shadow-medium);
+            border-color: var(--accent-light);
+            transform: translateY(-2px);
+        }
+        
+        .booking-card.cancelled {
+            opacity: 0.65;
+            border-color: var(--danger-text);
+        }
+        
+        .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .booking-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-dark);
+        }
+        
+        .booking-status {
+            padding: 5px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .status-new {
+            background: var(--success-bg);
+            color: var(--success-text);
+        }
+        
+        .status-cancelled {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+        }
+        
+        .booking-date {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+        
+        .booking-preview {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .booking-detail {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .booking-detail strong {
+            color: var(--text-primary);
+            margin-left: 4px;
+        }
+
+        .details-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-dark);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 12px;
+        }
+
+        .details-btn:hover {
+            border-color: var(--accent-light);
+            transform: translateY(-1px);
+        }
+
+        .details-btn.active {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border-color: var(--accent-dark);
+        }
+
+        .booking-details-full {
+            display: none;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .booking-details-full.show {
+            display: block;
+        }
+
+        .details-section {
+            margin-bottom: 16px;
+        }
+
+        .details-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .details-section-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-brown);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .detail-grid {
+            display: grid;
+            gap: 10px;
+        }
+
+        .detail-item {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            display: block;
+        }
+
+        .detail-value {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 4px;
+        }
+        
+        .booking-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+            flex-wrap: wrap;
+        }
+        
+        .action-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid var(--border-color);
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        .action-btn.primary {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border-color: var(--accent-dark);
+        }
+        
+        .action-btn.danger {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+            border-color: var(--danger-text);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 24px;
+            max-width: 620px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(107, 93, 82, 0.3);
+            animation: modalSlideIn 0.3s ease;
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: flex-end;
+        }
+        
+        .modal-actions .action-btn {
+            flex: unset;
+            min-width: 120px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+            font-size: 18px;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--border-color);
+            border-top-color: var(--accent-brown);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>📋 История бронирований</h1>
+    <p id="manager-name">Загрузка...</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-number" id="stat-total">0</div>
+        <div class="stat-label">Всего броней</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number" id="stat-active">0</div>
+        <div class="stat-label">Активных</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number" id="stat-cancelled">0</div>
+        <div class="stat-label">Отменено</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number" id="stat-packages">0</div>
+        <div class="stat-label">Пакетов</div>
+    </div>
+</div>
+
+<div class="controls">
+    <div class="search-box">
+        <input type="text" class="search-input" id="search-input" placeholder="Поиск по имени или паспорту...">
+        <button class="search-btn" onclick="applyFilters()">Найти</button>
+    </div>
+    
+    <div class="filter-tabs">
+        <div class="filter-tab active" data-filter="all" onclick="setStatusFilter('all')">Все</div>
+        <div class="filter-tab" data-filter="active" onclick="setStatusFilter('active')">Активные</div>
+        <div class="filter-tab" data-filter="cancelled" onclick="setStatusFilter('cancelled')">Отмененные</div>
+    </div>
+    
+    <div class="packages-filter">
+        <div class="packages-filter-label">Фильтр по пакетам:</div>
+        <div class="packages-list" id="packages-list"></div>
+    </div>
+    
+    <div id="selected-filter-info" class="selected-filter-info" style="display: none;">
+        <span id="selected-filter-text"></span>
+        <button class="search-btn" style="padding:8px 14px;" onclick="clearPackageFilter()">✕ Сбросить</button>
+    </div>
+</div>
+
+<div id="bookings-container">
+    <div class="loading">
+        <div class="spinner"></div>
+        <p>Загрузка истории...</p>
+    </div>
+</div>
+
+<div class="modal" id="detail-modal">
+    <div class="modal-content">
+        <div class="modal-header" id="modal-title">Детали бронирования</div>
+        
+        <div id="modal-body"></div>
+        
+        <div class="modal-actions">
+            <button class="action-btn" onclick="closeModal()">Закрыть</button>
+            <button class="action-btn danger" id="cancel-btn" onclick="promptCancelSelected()">Отменить</button>
+            <button class="action-btn primary" id="reschedule-btn" onclick="rescheduleBooking()">Перенести</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    const API_URL = window.BULL_API_URL;
+    const urlManagerId = new URLSearchParams(window.location.search).get('managerId');
+
+    let allBookings = [];
+    let filteredBookings = [];
+    let currentStatusFilter = 'all';
+    let currentPackageFilter = null;
+    let selectedBooking = null;
+    let packagesData = {};
+
+    const mapStatus = (value) => {
+        const normalized = (value || '').toLowerCase().trim();
+        if (!normalized) return 'new';
+        if (normalized.includes('cancel')) return 'cancelled';
+        if (normalized.includes('resched') || normalized.includes('перенос')) return 'rescheduled';
+        return normalized;
+    };
+    const safeValue = (value, fallback = '-') => (value && value !== '-' ? value : fallback);
+    const formatDateTime = (value) => {
+        if (!value) return '-';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        const dateStr = date.toLocaleDateString('ru-RU');
+        const timeStr = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        return `${dateStr} ${timeStr}`;
+    };
+    const requireCancelConfirm = (booking) => {
+        const answer = prompt(`Чтобы отменить бронь для ${booking.guest_last_name || ''} ${booking.guest_first_name || ''}, введите YES`);
+        return answer && answer.trim().toLowerCase() === 'yes';
+    };
+
+    async function init() {
+        const user = tg.initDataUnsafe?.user;
+        if (urlManagerId) {
+            document.getElementById('manager-name').textContent = `Менеджер: ${urlManagerId}`;
+            await loadBookings(urlManagerId);
+        } else if (user) {
+            document.getElementById('manager-name').textContent = `Менеджер: ${user.first_name}`;
+            await loadBookings(user.id);
+        } else {
+            document.getElementById('manager-name').textContent = 'Демо режим';
+            await loadBookings(0);
+        }
+
+        document.getElementById('search-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                applyFilters();
+            }
+        });
+    }
+
+    async function loadBookings(managerId) {
+        try {
+            const response = await fetch(`${API_URL}/api/history/${managerId}`, {
+                headers: {"ngrok-skip-browser-warning":"1"}
+            });
+            
+            const data = await response.json();
+            
+            if (data.ok) {
+                allBookings = data.bookings || [];
+                processPackagesData();
+                updateStats();
+                renderPackagesList();
+                applyFilters();
+            } else {
+                showEmpty();
+            }
+        } catch (e) {
+            console.error('Ошибка загрузки:', e);
+            showError();
+        }
+    }
+
+    function processPackagesData() {
+        packagesData = {};
+        
+        allBookings.forEach(booking => {
+            const status = mapStatus(booking.status);
+            const pkgName = booking.package_name || 'Без пакета';
+            if (!packagesData[pkgName]) {
+                packagesData[pkgName] = {
+                    name: pkgName,
+                    total: 0,
+                    active: 0,
+                    cancelled: 0
+                };
+            }
+            
+            packagesData[pkgName].total++;
+            if (status === 'cancelled') {
+                packagesData[pkgName].cancelled++;
+            } else {
+                packagesData[pkgName].active++;
+            }
+        });
+    }
+
+    function updateStats() {
+        const total = allBookings.length;
+        const active = allBookings.filter(b => mapStatus(b.status) !== 'cancelled').length;
+        const cancelled = allBookings.filter(b => mapStatus(b.status) === 'cancelled').length;
+        const packages = Object.keys(packagesData).length;
+        
+        document.getElementById('stat-total').textContent = total;
+        document.getElementById('stat-active').textContent = active;
+        document.getElementById('stat-cancelled').textContent = cancelled;
+        document.getElementById('stat-packages').textContent = packages;
+    }
+
+    function renderPackagesList() {
+        const container = document.getElementById('packages-list');
+        
+        const sortedPackages = Object.values(packagesData).sort((a, b) => b.total - a.total);
+        
+        container.innerHTML = sortedPackages.map(pkg => {
+            const countText = currentStatusFilter === 'all' 
+                ? pkg.total 
+                : currentStatusFilter === 'active' 
+                    ? pkg.active 
+                    : pkg.cancelled;
+            
+            return `
+                <div class="package-item" onclick="setPackageFilter('${pkg.name.replace(/'/g, "\\'")}', this)">
+                    <span class="package-name" title="${pkg.name}">
+                        ${pkg.name.length > 35 ? pkg.name.substring(0, 35) + '...' : pkg.name}
+                    </span>
+                    <span class="package-count">${countText}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function setStatusFilter(filter) {
+        currentStatusFilter = filter;
+        
+        document.querySelectorAll('.filter-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        document.querySelector(`[data-filter="${filter}"]`).classList.add('active');
+        
+        renderPackagesList();
+        applyFilters();
+    }
+
+    function setPackageFilter(packageName, element) {
+        currentPackageFilter = packageName;
+        
+        document.querySelectorAll('.package-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        if (element) {
+            element.classList.add('active');
+        }
+        
+        const info = document.getElementById('selected-filter-info');
+        const text = document.getElementById('selected-filter-text');
+        
+        const pkg = packagesData[packageName];
+        const count = currentStatusFilter === 'all' 
+            ? pkg.total 
+            : currentStatusFilter === 'active' 
+                ? pkg.active 
+                : pkg.cancelled;
+        
+        text.textContent = `${packageName} (${count} паломников)`;
+        info.style.display = 'flex';
+        
+        applyFilters();
+    }
+
+    function clearPackageFilter() {
+        currentPackageFilter = null;
+        
+        document.querySelectorAll('.package-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        
+        document.getElementById('selected-filter-info').style.display = 'none';
+        
+        applyFilters();
+    }
+
+    function applyFilters() {
+        const searchText = document.getElementById('search-input').value.trim().toLowerCase();
+        
+        filteredBookings = allBookings.filter(booking => {
+            const status = mapStatus(booking.status);
+            if (currentStatusFilter === 'active' && status === 'cancelled') return false;
+            if (currentStatusFilter === 'cancelled' && status !== 'cancelled') return false;
+            if (currentPackageFilter && booking.package_name !== currentPackageFilter) return false;
+            
+            if (searchText) {
+                const fullName = `${booking.guest_last_name || ''} ${booking.guest_first_name || ''}`.toLowerCase();
+                const passport = (booking.passport_num || '').toLowerCase();
+                if (!fullName.includes(searchText) && !passport.includes(searchText)) {
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+        
+        renderBookings();
+    }
+
+    function renderBookings() {
+        const container = document.getElementById('bookings-container');
+        
+        if (filteredBookings.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="icon">📭</div>
+                    <h3>Бронирования не найдены</h3>
+                    <p>Попробуйте изменить фильтры или поисковый запрос</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = `
+            <div class="bookings-list">
+                ${filteredBookings.map(booking => renderBookingCard(booking)).join('')}
+            </div>
+        `;
+    }
+
+    function renderBookingCard(booking) {
+        const status = mapStatus(booking.status);
+        const cancelled = status === 'cancelled';
+        const cardClass = cancelled ? 'booking-card cancelled' : 'booking-card';
+        const statusClass = cancelled ? 'booking-status status-cancelled' : 'booking-status status-new';
+        const statusText = cancelled ? 'Отменено' : 'Активна';
+
+        const guestName = safeValue(`${booking.guest_last_name || ''} ${booking.guest_first_name || ''}`.trim(), 'Без имени');
+        const packageName = safeValue(booking.package_name);
+        const sheetName = safeValue(booking.sheet_name);
+        const roomType = safeValue(booking.room_type || booking.placement_type);
+        const phone = safeValue(booking.client_phone);
+        const price = safeValue(booking.price);
+        const priceLabel = price === '-' ? '-' : `${price} тг`;
+        const amountPaid = safeValue(booking.amount_paid);
+        const createdLabel = formatDateTime(booking.created_at);
+        const comment = booking.comment && booking.comment.trim() !== '' ? booking.comment : '-';
+        const managerName = safeValue(booking.manager_name_text || booking.manager_name);
+
+        // Additional details
+        const passportNum = safeValue(booking.passport_num);
+        const passportExpiry = safeValue(booking.passport_expiry);
+        const iin = safeValue(booking.guest_iin);
+        const dateOfBirth = safeValue(booking.date_of_birth);
+        const gender = booking.gender === 'F' ? 'Женский' : 'Мужской';
+        const mealType = safeValue(booking.meal_type);
+        const visaStatus = safeValue(booking.visa_status);
+        const avia = safeValue(booking.avia);
+        const train = safeValue(booking.train);
+        const departureCity = safeValue(booking.departure_city);
+        const region = safeValue(booking.region);
+        const source = safeValue(booking.source);
+
+        const cardIndex = filteredBookings.indexOf(booking);
+
+        return `
+            <div class="${cardClass}">
+                <div class="booking-header">
+                    <div class="booking-name">👤 ${guestName}</div>
+                    <div class="${statusClass}">${statusText}</div>
+                </div>
+
+                <div class="booking-preview">
+                    <div class="booking-detail">📞 Телефон: <strong>${phone}</strong></div>
+                    <div class="booking-detail">Пакет: <strong>${packageName}</strong></div>
+                    <div class="booking-detail">Дата: <strong>${sheetName}</strong></div>
+                    <div class="booking-detail">Комната: <strong>${roomType}</strong></div>
+                </div>
+
+                <button class="details-btn" onclick="toggleDetails(${cardIndex})">
+                    📋 Подробнее
+                </button>
+
+                <div class="booking-details-full" id="details-${cardIndex}">
+                    <div class="details-section">
+                        <div class="details-section-title">Паспортные данные</div>
+                        <div class="booking-detail">Пол: <strong>${gender}</strong></div>
+                        <div class="booking-detail">Дата рождения: <strong>${dateOfBirth}</strong></div>
+                        <div class="booking-detail">Номер паспорта: <strong>${passportNum}</strong></div>
+                        <div class="booking-detail">Срок действия: <strong>${passportExpiry}</strong></div>
+                        <div class="booking-detail">ИИН: <strong>${iin}</strong></div>
+                    </div>
+
+                    <div class="details-section">
+                        <div class="details-section-title">Детали тура</div>
+                        <div class="booking-detail">Питание: <strong>${mealType}</strong></div>
+                        <div class="booking-detail">Цена: <strong>${priceLabel}</strong></div>
+                        <div class="booking-detail">Оплачено: <strong>${amountPaid}</strong></div>
+                        ${visaStatus !== '-' ? `<div class="booking-detail">Виза: <strong>${visaStatus}</strong></div>` : ''}
+                        ${avia !== '-' ? `<div class="booking-detail">Авиа: <strong>${avia}</strong></div>` : ''}
+                        ${train !== '-' ? `<div class="booking-detail">Поезд: <strong>${train}</strong></div>` : ''}
+                        ${region !== '-' ? `<div class="booking-detail">Регион: <strong>${region}</strong></div>` : ''}
+                        ${departureCity !== '-' ? `<div class="booking-detail">Город вылета: <strong>${departureCity}</strong></div>` : ''}
+                        ${source !== '-' ? `<div class="booking-detail">Источник: <strong>${source}</strong></div>` : ''}
+                    </div>
+
+                    <div class="details-section">
+                        <div class="details-section-title">Комментарий</div>
+                        <div class="booking-detail">${comment === '-' ? '—' : comment}</div>
+                    </div>
+
+                    <div class="details-section">
+                        <div class="booking-detail">Менеджер: <strong>${managerName}</strong></div>
+                        <div class="booking-detail">Создано: <strong>${createdLabel}</strong></div>
+                    </div>
+                </div>
+
+                ${!cancelled ? `
+                <div class="booking-actions">
+                    <button class="action-btn danger" onclick="confirmCancel(${booking.id})">Отменить</button>
+                    <button class="action-btn" onclick="startReschedule(${booking.id})">Перенести</button>
+                </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function toggleDetails(index) {
+        const detailsDiv = document.getElementById(`details-${index}`);
+        const btn = event.target;
+
+        if (detailsDiv.classList.contains('show')) {
+            detailsDiv.classList.remove('show');
+            btn.classList.remove('active');
+            btn.innerHTML = '📋 Подробнее';
+        } else {
+            detailsDiv.classList.add('show');
+            btn.classList.add('active');
+            btn.innerHTML = '🔼 Скрыть';
+        }
+    }
+
+    function showDetails(bookingId) {
+        const booking = allBookings.find(b => b.id === bookingId);
+        if (!booking) return;
+
+        selectedBooking = booking;
+        
+        document.getElementById('modal-title').textContent =
+            `${booking.guest_last_name || ''} ${booking.guest_first_name || ''}`;
+        
+        document.getElementById('modal-body').innerHTML = `
+            <div class="modal-section">
+                <h3>Персональные данные</h3>
+                <div class="detail-grid">
+                    <div class="detail-item"><span class="detail-label">ФИО</span><span class="detail-value">${booking.guest_last_name || ''} ${booking.guest_first_name || ''}</span></div>
+                    <div class="detail-item"><span class="detail-label">Пол</span><span class="detail-value">${booking.gender === 'F' ? 'Женский' : 'Мужской'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Дата рождения</span><span class="detail-value">${booking.date_of_birth || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Телефон</span><span class="detail-value">${booking.client_phone || '-'}</span></div>
+                </div>
+            </div>
+            
+            <div class="modal-section">
+                <h3>Документы</h3>
+                <div class="detail-grid">
+                    <div class="detail-item"><span class="detail-label">Паспорт</span><span class="detail-value">${booking.passport_num || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Срок действия</span><span class="detail-value">${booking.passport_expiry || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">ИИН</span><span class="detail-value">${booking.guest_iin || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Виза</span><span class="detail-value">${booking.visa_status || '-'}</span></div>
+                </div>
+            </div>
+            
+            <div class="modal-section">
+                <h3>Тур</h3>
+                <div class="detail-grid">
+                    <div class="detail-item"><span class="detail-label">Пакет</span><span class="detail-value">${booking.package_name || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Дата</span><span class="detail-value">${booking.sheet_name || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Город вылета</span><span class="detail-value">${booking.departure_city || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Авиа</span><span class="detail-value">${booking.avia || '-'}</span></div>
+                </div>
+            </div>
+            
+            <div class="modal-section">
+                <h3>Размещение</h3>
+                <div class="detail-grid">
+                    <div class="detail-item"><span class="detail-label">Тип номера</span><span class="detail-value">${booking.room_type || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Питание</span><span class="detail-value">${booking.meal_type || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Строка листа</span><span class="detail-value">${booking.sheet_row_number || 'Не указано'}</span></div>
+                </div>
+            </div>
+            
+            <div class="modal-section">
+                <h3>Финансы и доп.инфо</h3>
+                <div class="detail-grid">
+                    <div class="detail-item"><span class="detail-label">Сумма</span><span class="detail-value">${booking.price || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Оплачено</span><span class="detail-value">${booking.amount_paid || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Курс</span><span class="detail-value">${booking.exchange_rate || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Скидка</span><span class="detail-value">${booking.discount || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Менеджер</span><span class="detail-value">${booking.manager_name_text || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Источник</span><span class="detail-value">${booking.source || '-'}</span></div>
+                    <div class="detail-item"><span class="detail-label">Регион</span><span class="detail-value">${booking.region || '-'}</span></div>
+                    ${booking.comment && booking.comment !== '-' ? `<div class="detail-item"><span class="detail-label">Комментарий</span><span class="detail-value">${booking.comment}</span></div>` : ''}
+                </div>
+            </div>
+        `;
+        
+        const status = mapStatus(booking.status);
+        document.getElementById('cancel-btn').style.display = status === 'cancelled' ? 'none' : 'inline-flex';
+        document.getElementById('reschedule-btn').style.display = status === 'cancelled' ? 'none' : 'inline-flex';
+        
+        document.getElementById('detail-modal').classList.add('active');
+    }
+
+    function closeModal() {
+        document.getElementById('detail-modal').classList.remove('active');
+        selectedBooking = null;
+    }
+
+    async function confirmCancel(bookingId) {
+        const booking = allBookings.find(b => b.id === bookingId);
+        if (!booking) return;
+        
+        if (!requireCancelConfirm(booking)) return;
+        await cancelBooking(bookingId);
+    }
+
+    async function promptCancelSelected() {
+        if (!selectedBooking) return;
+        if (!requireCancelConfirm(selectedBooking)) return;
+        await cancelBooking(selectedBooking.id);
+    }
+
+    async function cancelBooking(bookingId) {
+        const targetId = bookingId || selectedBooking?.id;
+        if (!targetId) return;
+        try {
+            const response = await fetch(`${API_URL}/api/bookings/${targetId}/cancel`, {
+                method: 'POST',
+                headers: {
+                    "Content-Type": "application/json",
+                    "ngrok-skip-browser-warning": "1"
+                }
+            });
+            const data = await response.json();
+            if (data.ok) {
+                alert('✅ Бронь отменена');
+                closeModal();
+                const user = tg.initDataUnsafe?.user;
+                await loadBookings(urlManagerId || user?.id || 0);
+            } else {
+                alert('❌ Ошибка отмены: ' + (data.error || ''));
+            }
+        } catch (e) {
+            alert('❌ Ошибка сети: ' + e);
+        }
+    }
+
+    function startReschedule(bookingId) {
+        const booking = allBookings.find(b => b.id === bookingId);
+        if (!booking) return;
+        
+        const pilgrimData = {
+            first_name: booking.guest_first_name,
+            last_name: booking.guest_last_name,
+            phone: booking.client_phone,
+            passport_num: booking.passport_num,
+            date_of_birth: booking.date_of_birth,
+            gender: booking.gender,
+            passport_expiry: booking.passport_expiry,
+            iin: booking.guest_iin
+        };
+        
+        localStorage.setItem('reschedule_booking_id', booking.id);
+        localStorage.setItem('reschedule_data', JSON.stringify(pilgrimData));
+        
+        window.location.href = 'booking_form_v2.html';
+    }
+
+    function rescheduleBooking() {
+        if (selectedBooking) {
+            startReschedule(selectedBooking.id);
+        }
+    }
+
+    function showEmpty() {
+        document.getElementById('bookings-container').innerHTML = `
+            <div class="empty-state">
+                <div class="icon">📭</div>
+                <h3>История пуста</h3>
+                <p>У вас пока нет завершенных бронирований</p>
+            </div>
+        `;
+    }
+
+    function showError() {
+        document.getElementById('bookings-container').innerHTML = `
+            <div class="empty-state">
+                <div class="icon">⚠️</div>
+                <h3>Ошибка загрузки</h3>
+                <p>Не удалось загрузить историю бронирований</p>
+            </div>
+        `;
+    }
+
+    document.getElementById('detail-modal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeModal();
+        }
+    });
+
+    init();
+</script>
+
+</body>
+</html>

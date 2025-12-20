@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Бронирование Bull Project</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/assets/config.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        :root {
+            /* Элегантная бежево-коричневая палитра */
+            --bg-primary: #FAF8F5;
+            --bg-secondary: #F5F1EB;
+            --bg-card: #FFFFFF;
+            --accent-brown: #9B8474;
+            --accent-dark: #6B5D52;
+            --accent-light: #C4B5A7;
+            --text-primary: #3D3935;
+            --text-secondary: #8A827C;
+            --border-color: #E8E3DC;
+            --shadow-soft: 0 4px 12px rgba(107, 93, 82, 0.08);
+            --shadow-medium: 0 8px 24px rgba(107, 93, 82, 0.12);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            padding: 20px;
+            padding-bottom: 60px;
+            min-height: 100vh;
+        }
+        
+        .app-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .app-header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent-dark);
+            margin-bottom: 5px;
+            letter-spacing: -0.5px;
+        }
+
+        .app-header p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .step {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: var(--text-secondary);
+        }
+
+        .step.active {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border-color: var(--accent-dark);
+            box-shadow: 0 4px 12px rgba(107, 93, 82, 0.3);
+        }
+
+        .step.completed {
+            background: #E8F5E9;
+            border-color: #2E7D32;
+            color: #2E7D32;
+        }
+        
+        label {
+            display: block;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-brown);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        select, input, textarea {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 14px;
+            background-color: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 16px;
+            font-family: inherit;
+            outline: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(107, 93, 82, 0.04);
+        }
+        
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--accent-brown);
+            background-color: #FFFFFF;
+            box-shadow: 0 4px 12px rgba(155, 132, 116, 0.15);
+            transform: translateY(-1px);
+        }
+        
+        .row {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .col {
+            flex: 1;
+        }
+        
+        /* Стилизованные радио-кнопки */
+        .city-buttons, .radio-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+        
+        .city-buttons input, .radio-group input {
+            display: none;
+        }
+        
+        .city-buttons label, .radio-group label {
+            flex: 1;
+            padding: 14px 20px;
+            text-align: center;
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 14px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: var(--text-secondary);
+            margin: 0;
+            text-transform: none;
+            letter-spacing: 0;
+            box-shadow: var(--shadow-soft);
+        }
+        
+        .city-buttons label:hover, .radio-group label:hover {
+            border-color: var(--accent-light);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-medium);
+        }
+        
+        .city-buttons input:checked + label, .radio-group input:checked + label {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border-color: var(--accent-dark);
+            box-shadow: 0 6px 16px rgba(107, 93, 82, 0.25);
+        }
+        
+        /* Карточки паломников */
+        .tourist-card {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow-soft);
+            transition: all 0.3s ease;
+        }
+        
+        .tourist-card:hover {
+            box-shadow: var(--shadow-medium);
+            border-color: var(--accent-light);
+        }
+        
+        .tourist-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .tourist-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--accent-dark);
+        }
+        
+        .passport-btn {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(107, 93, 82, 0.2);
+        }
+        
+        .passport-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(107, 93, 82, 0.3);
+        }
+        
+        .passport-btn:active {
+            transform: translateY(0);
+        }
+        
+        /* Кнопки действий */
+        .submit-btn {
+            width: 100%;
+            padding: 18px;
+            margin-top: 24px;
+            border: none;
+            border-radius: 16px;
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            font-size: 17px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 6px 20px rgba(107, 93, 82, 0.25);
+            letter-spacing: 0.5px;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 28px rgba(107, 93, 82, 0.35);
+        }
+        
+        .submit-btn:active {
+            transform: translateY(-1px);
+        }
+        
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* Smart box */
+        .smart-box {
+            background: linear-gradient(135deg, #FFFFFF 0%, var(--bg-secondary) 100%);
+            padding: 20px;
+            border-radius: 18px;
+            border: 2px solid var(--border-color);
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-medium);
+        }
+        
+        .smart-box h3 {
+            color: var(--accent-dark);
+            margin-bottom: 16px;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        /* Данные паспорта */
+        .passport-data {
+            background: linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%);
+            padding: 14px;
+            border-radius: 12px;
+            margin-top: 12px;
+            border: 2px solid #C8E6C9;
+            display: none;
+            animation: slideDown 0.3s ease;
+        }
+
+        .phone-input {
+            margin-top: 8px;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .passport-data.visible {
+            display: block;
+        }
+        
+        .passport-field {
+            font-size: 14px;
+            margin: 6px 0;
+            color: var(--text-primary);
+            display: flex;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(139, 115, 85, 0.1);
+        }
+        
+        .passport-field:last-child {
+            border-bottom: none;
+        }
+        
+        .passport-field strong {
+            color: #2E7D32;
+            min-width: 150px;
+            font-weight: 600;
+        }
+        
+        /* Details/Summary */
+        details {
+            margin-top: 20px;
+            background: var(--bg-card);
+            padding: 8px;
+            border-radius: 14px;
+            border: 2px solid var(--border-color);
+            box-shadow: var(--shadow-soft);
+        }
+        
+        summary {
+            font-weight: 700;
+            padding: 14px;
+            cursor: pointer;
+            color: var(--accent-dark);
+            font-size: 15px;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            list-style: none;
+        }
+        
+        summary:hover {
+            background: var(--bg-secondary);
+        }
+        
+        summary::-webkit-details-marker {
+            display: none;
+        }
+        
+        summary::before {
+            content: "📂 ";
+            margin-right: 8px;
+        }
+        
+        details[open] summary::before {
+            content: "📂 ";
+        }
+        
+        details > div {
+            padding: 14px;
+        }
+        
+        /* Поиск даты */
+        .date-search {
+            display: flex;
+            gap: 10px;
+            align-items: stretch;
+        }
+        
+        .date-search input {
+            flex: 1;
+            text-align: center;
+            font-weight: 600;
+            font-size: 18px;
+        }
+        
+        .search-btn {
+            background: linear-gradient(135deg, var(--accent-brown) 0%, var(--accent-dark) 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 0 24px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 15px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(107, 93, 82, 0.2);
+            white-space: nowrap;
+        }
+        
+        .search-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(107, 93, 82, 0.3);
+        }
+        
+        /* Кнопка "Назад" */
+        .back-btn {
+            width: 100%;
+            background: none;
+            border: 2px solid var(--border-color);
+            color: var(--text-secondary);
+            margin-top: 12px;
+            padding: 14px;
+            border-radius: 14px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .back-btn:hover {
+            border-color: var(--accent-light);
+            color: var(--accent-brown);
+            background: var(--bg-secondary);
+        }
+        
+        /* Анимации загрузки */
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+        
+        .loading {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        /* Иконки в тексте */
+        .icon {
+            display: inline-block;
+            margin-right: 6px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-header">
+    <h1>🕌 Бронирование Умры</h1>
+    <p>Bull Project - Система бронирования</p>
+</div>
+
+<div id="step_1">
+    <div class="step-indicator">
+        <div class="step active">1</div>
+        <div class="step">2</div>
+    </div>
+
+    <div class="smart-box">
+        <label><span class="icon">📅</span>1. Дата вылета:</label>
+        <div class="date-search">
+            <input type="text" id="date_input" placeholder="13.12">
+            <button type="button" onclick="handleSearch()" class="search-btn">Найти</button>
+        </div>
+
+        <label style="margin-top: 16px;"><span class="icon">📦</span>2. Пакет:</label>
+        <select id="pkg_name" disabled>
+            <option value="">Сначала введите дату</option>
+        </select>
+    </div>
+
+    <input type="hidden" id="sheet_name_hidden">
+    <input type="hidden" id="table_id_hidden">
+
+    <label><span class="icon">🛫</span>Город вылета:</label>
+    <div class="city-buttons">
+        <input type="radio" name="departure_city" id="c_ala" value="Almaty" checked>
+        <label for="c_ala">Almaty</label>
+        <input type="radio" name="departure_city" id="c_ast" value="Astana">
+        <label for="c_ast">Astana</label>
+    </div>
+
+    <label><span class="icon">👥</span>Паломники:</label>
+    <div id="pilgrims-container"></div>
+
+    <div class="row">
+        <div class="col">
+            <label>AVIA:</label>
+            <input type="text" id="avia" placeholder="">
+        </div>
+        <div class="col">
+            <label>VISA:</label>
+            <select id="visa_status">
+                <option value="UMRAH VISA">UMRAH VISA</option>
+                <option value="TOUR VISA">TOUR VISA</option>
+                <option value="NO VISA">NO VISA</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col">
+            <label>Тип номера:</label>
+            <select id="room_type">
+                <option value="Quad">Quadro</option>
+                <option value="Triple">Triple</option>
+                <option value="Double">Double</option>
+                <option value="Single">Single</option>
+            </select>
+        </div>
+        <div class="col">
+            <label>Питание:</label>
+            <select id="meal_type">
+                <option value="BB">BB</option>
+                <option value="HB">HB</option>
+                <option value="FB">FB</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col">
+            <label>Сумма пакета ($):</label>
+            <input type="tel" id="price" placeholder="">
+        </div>
+        <div class="col">
+            <label>Оплачено ($):</label>
+            <input type="tel" id="amount_paid" value="">
+        </div>
+    </div>
+
+    <details>
+        <summary>Дополнительные поля</summary>
+        <div>
+            <label>Регион:</label>
+            <select id="region">
+                <option value="">Выберите регион</option>
+                <option value="Almaty">Алматы</option>
+                <option value="Astana">Астана</option>
+                <option value="Shymkent">Шымкент</option>
+                <option value="Atyrau">Атырау</option>
+                <option value="Aktobe">Актобе</option>
+                <option value="Karaganda">Караганда</option>
+                <option value="Kostanay">Костанай</option>
+                <option value="Pavlodar">Павлодар</option>
+                <option value="Turkistan">Туркестан</option>
+                <option value="Mangystau">Мангистау</option>
+                <option value="EastKazakhstan">ВКО</option>
+                <option value="WestKazakhstan">ЗКО</option>
+                <option value="NorthKazakhstan">СКО</option>
+                <option value="Kyzylorda">Кызылорда</option>
+                <option value="Zhambyl">Жамбыл</option>
+                <option value="Abai">Абайская область</option>
+                <option value="Ulytau">Улытау</option>
+                <option value="Jetisu">Жетысу</option>
+                <option value="Other">Другой</option>
+            </select>
+
+            <label>Договор №:</label>
+            <input type="text" id="contract_number" value="">
+
+            <label>Курс $:</label>
+            <input type="tel" id="exchange_rate" placeholder="">
+
+            <label>Скидка:</label>
+            <input type="text" id="discount" value="">
+
+            <label>Источник:</label>
+            <input type="text" id="source" placeholder="">
+
+            <label>🚆 Поезд:</label>
+            <select id="train">
+                <option value="-">Нет</option>
+                <option value="YES">Да</option>
+            </select>
+        </div>
+    </details>
+
+    <label>Менеджер:</label>
+    <input type="text" id="manager_name_text" readonly style="background: var(--bg-secondary);">
+    
+    <label>Комментарий:</label>
+    <textarea id="comment" rows="3" placeholder="Дополнительная информация..."></textarea>
+
+    <button class="submit-btn" onclick="goToStep2()">
+        <span class="icon">➡️</span> ДАЛЕЕ К РАЗМЕЩЕНИЮ
+    </button>
+</div>
+
+<div id="step_2" style="display: none;">
+    <div class="step-indicator">
+        <div class="step completed">✓</div>
+        <div class="step active">2</div>
+    </div>
+
+    <div class="smart-box">
+        <h3>🛏 Размещение</h3>
+
+        <div id="group_logic" style="display: none; margin-bottom: 20px;">
+            <label>Тип размещения группы:</label>
+            <div class="city-buttons">
+                <input type="radio" name="placement_type" id="m_fam" value="family" checked>
+                <label for="m_fam">👪 Семья (вместе)</label>
+                <input type="radio" name="placement_type" id="m_sep" value="separate">
+                <label for="m_sep">🚻 Раздельно (по полу)</label>
+            </div>
+        </div>
+
+        <label>Метод записи в таблицу:</label>
+        <div class="radio-group" style="flex-direction: column;">
+            <input type="radio" name="place_method" id="meth_auto" value="auto" checked onchange="updateUI()">
+            <label for="meth_auto">Автоматически (свободное размещение)</label>
+
+            <input type="radio" name="place_method" id="meth_pick" value="pick" onchange="updateUI()">
+            <label for="meth_pick">Подселить (Выбрать комнату)</label>
+
+            <input type="radio" name="place_method" id="meth_man" value="manual" onchange="updateUI()">
+            <label for="meth_man"> Конкретная строка</label>
+        </div>
+
+        <div id="room_list_div" style="display: none; margin-top: 20px;">
+            <label>Выберите свободное место:</label>
+            <select id="room_select"></select>
+        </div>
+
+        <div id="manual_div" style="display: none; margin-top: 20px;">
+            <label>Номер строки (напр. 145):</label>
+            <input type="number" id="manual_row_input" placeholder="Введите номер строки">
+        </div>
+    </div>
+
+    <button class="submit-btn" id="finish_btn" onclick="finalSubmit()">
+        <span class="icon">✅</span> ЗАВЕРШИТЬ И ЗАПИСАТЬ
+    </button>
+    <button onclick="backToStep1()" class="back-btn">
+        <span class="icon">⬅️</span> Назад к данным
+    </button>
+</div>
+
+<script>
+    let tg = window.Telegram.WebApp;
+    tg.expand();
+
+    const API_URL = window.BULL_API_URL;
+    let pilgrimsData = [];
+
+    // --- ПОИСК ПАКЕТОВ ---
+    async function handleSearch() {
+        let date = document.getElementById('date_input').value.trim().replace(/[\/\s,]/g, '.');
+        document.getElementById('date_input').value = date;
+
+        if (date.length < 5) return alert("Введите дату полностью (напр. 13.12)");
+
+        const sel = document.getElementById('pkg_name');
+        sel.innerHTML = '<option class="loading">⏳ Поиск пакетов...</option>';
+
+        try {
+            const r = await fetch(`${API_URL}/api/packages?date=${date}`, { headers: {"ngrok-skip-browser-warning":"1"} });
+            const res = await r.json();
+
+            if (res.found) {
+                sel.disabled = false;
+                sel.innerHTML = res.data.map(i => `<option value="${i.n}" data-sheet="${i.s}" data-table="${i.t}">${i.n}</option>`).join('');
+                document.getElementById('sheet_name_hidden').value = res.data[0].s;
+                document.getElementById('table_id_hidden').value = res.data[0].t;
+            } else {
+                sel.innerHTML = '<option>❌ Нет рейсов</option>';
+                sel.disabled = true;
+            }
+        } catch(e) { alert("Ошибка связи с сервером"); }
+    }
+
+    document.getElementById('date_input').addEventListener('input', function() {
+        if (this.value.length === 5) handleSearch();
+    });
+
+    document.getElementById('pkg_name').onchange = (e) => {
+        const opt = e.target.options[e.target.selectedIndex];
+        document.getElementById('sheet_name_hidden').value = opt.dataset.sheet;
+        document.getElementById('table_id_hidden').value = opt.dataset.table;
+    };
+
+    // --- ПАРСИНГ ТУРИСТОВ ИЗ URL ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const pRaw = urlParams.get('pilgrims');
+
+    console.log("📥 URL параметр pilgrims:", pRaw);
+
+    if (pRaw) {
+        try {
+            const pilgrims = JSON.parse(decodeURIComponent(pRaw));
+            console.log("✅ Декодированные данные:", pilgrims);
+
+            pilgrimsData = pilgrims.map(p => ({
+                name: p.name || `${p.last_name || '-'} ${p.first_name || '-'}`,
+                last_name: p.last_name || "-",
+                first_name: p.first_name || "-",
+                phone: p.phone || "-",
+                passport_num: p.passport_num || "-",
+                date_of_birth: p.date_of_birth || "-",
+                gender: p.gender || "M",
+                passport_expiry: p.passport_expiry || "-",
+                iin: p.iin || "-",
+                passport_image_path: p.passport_image_path || null
+            }));
+
+            console.log("📋 Финальный pilgrimsData:", pilgrimsData);
+            renderPilgrims();
+        } catch(e) {
+            console.error("❌ Ошибка парсинга данных:", e);
+            alert("Ошибка загрузки данных паспортов");
+        }
+    }
+
+    function renderPilgrims() {
+        const container = document.getElementById('pilgrims-container');
+        container.innerHTML = pilgrimsData.map((p, idx) => `
+            <div class="tourist-card">
+                <div class="tourist-header">
+                    <span class="tourist-name">👤 ${p.name}</span>
+                    <button onclick="togglePassportData(${idx})" class="passport-btn">
+                        📋 Паспорт
+                    </button>
+                </div>
+                <input type="tel" class="phone-input" data-idx="${idx}" placeholder="Номер телефона" value="${p.phone !== '-' ? p.phone : ''}">
+
+                <div id="passport_${idx}" class="passport-data">
+                    <div class="passport-field"><strong>Фамилия:</strong> <span>${p.last_name}</span></div>
+                    <div class="passport-field"><strong>Имя:</strong> <span>${p.first_name}</span></div>
+                    <div class="passport-field"><strong>Пол:</strong> <span>${p.gender === 'M' ? '👨 Мужской' : '👩 Женский'}</span></div>
+                    <div class="passport-field"><strong>Дата рождения:</strong> <span>${p.date_of_birth}</span></div>
+                    <div class="passport-field"><strong>Паспорт:</strong> <span>${p.passport_num}</span></div>
+                    <div class="passport-field"><strong>Срок действия:</strong> <span>${p.passport_expiry}</span></div>
+                    <div class="passport-field"><strong>ИИН:</strong> <span>${p.iin}</span></div>
+                </div>
+            </div>
+        `).join('');
+
+        document.querySelectorAll('.phone-input').forEach(input => {
+            input.addEventListener('input', (e) => {
+                const idx = e.target.dataset.idx;
+                pilgrimsData[idx].phone = e.target.value;
+            });
+        });
+    }
+
+    function togglePassportData(idx) {
+        const el = document.getElementById(`passport_${idx}`);
+        el.classList.toggle('visible');
+    }
+
+    if (tg.initDataUnsafe?.user) {
+        document.getElementById('manager_name_text').value = tg.initDataUnsafe.user.first_name;
+    }
+
+    function goToStep2() {
+        const pkg = document.getElementById('pkg_name').value;
+        const price = document.getElementById('price').value;
+        if (!pkg || pkg === "" || !price) return alert("Заполните Пакет и Цену!");
+
+        document.getElementById('step_1').style.display = 'none';
+        document.getElementById('step_2').style.display = 'block';
+        window.scrollTo(0, 0);
+
+        // Показываем опции группового размещения, если паломников больше 1
+        if (pilgrimsData.length > 1) {
+            document.getElementById('group_logic').style.display = 'block';
+        }
+
+        fetchAvailableRooms();
+    }
+
+    function backToStep1() {
+        document.getElementById('step_2').style.display = 'none';
+        document.getElementById('step_1').style.display = 'block';
+        window.scrollTo(0, 0);
+    }
+
+    function updateUI() {
+        const m = document.querySelector('input[name="place_method"]:checked').value;
+        document.getElementById('room_list_div').style.display = m === 'pick' ? 'block' : 'none';
+        document.getElementById('manual_div').style.display = m === 'manual' ? 'block' : 'none';
+    }
+
+    async function fetchAvailableRooms() {
+        const sel = document.getElementById('room_select');
+        sel.innerHTML = '<option class="loading">⏳ Загрузка комнат...</option>';
+
+        const params = new URLSearchParams({
+            table_id: document.getElementById('table_id_hidden').value,
+            sheet_name: document.getElementById('sheet_name_hidden').value,
+            package_name: document.getElementById('pkg_name').value,
+            count: pilgrimsData.length,
+            room_type: document.getElementById('room_type').value,
+            gender: pilgrimsData[0]?.gender || 'M'
+        });
+
+        try {
+            const r = await fetch(`${API_URL}/api/rooms?${params}`, { headers: {"ngrok-skip-browser-warning":"1"} });
+            const res = await r.json();
+            if (res.found && res.rooms.length > 0) {
+                sel.innerHTML = res.rooms.map(rm => {
+                    const icon = rm.gender === 'F' ? '🚺' : '🚹';
+                    const label = rm.label || `${rm.type} · ${rm.last_guest || 'Свободно'} (Свободно: ${rm.free})`;
+                    return `<option value="${rm.row}">${icon} ${label} [Строка: ${rm.row}]</option>`;
+                }).join('');
+            } else {
+                sel.innerHTML = '<option value="">Нет мест для подселения</option>';
+            }
+        } catch(e) { sel.innerHTML = '<option>Ошибка загрузки</option>'; }
+    }
+
+    async function finalSubmit() {
+        const method = document.querySelector('input[name="place_method"]:checked').value;
+        let row = null;
+        if (method === 'pick') row = document.getElementById('room_select').value;
+        if (method === 'manual') row = document.getElementById('manual_row_input').value;
+
+        const pilgrims = pilgrimsData.map(p => ({
+            first_name: p.first_name,
+            last_name: p.last_name,
+            phone: p.phone,
+            passport_num: p.passport_num,
+            date_of_birth: p.date_of_birth,
+            gender: p.gender,
+            passport_expiry: p.passport_expiry,
+            iin: p.iin,
+            passport_image_path: p.passport_image_path || null
+        }));
+
+        console.log("📤 Отправка данных на сервер:", pilgrims);
+
+        const visaValue = document.getElementById('visa_status').value;
+        const normalizedVisa = visaValue === 'NO VISA' ? '-' : visaValue;
+
+        const data = {
+            pilgrims: pilgrims,
+            package_name: document.getElementById('pkg_name').value,
+            sheet_name: document.getElementById('sheet_name_hidden').value,
+            table_id: document.getElementById('table_id_hidden').value,
+            departure_city: document.querySelector('input[name="departure_city"]:checked').value,
+            room_type: document.getElementById('room_type').value,
+            meal_type: document.getElementById('meal_type').value,
+            visa_status: normalizedVisa,
+            avia: document.getElementById('avia').value,
+            price: document.getElementById('price').value,
+            amount_paid: document.getElementById('amount_paid').value,
+            contract_number: document.getElementById('contract_number').value,
+            exchange_rate: document.getElementById('exchange_rate').value,
+            discount: document.getElementById('discount').value,
+            source: document.getElementById('source').value,
+            region: document.getElementById('region').value,
+            train: document.getElementById('train').value,
+            manager_name_text: document.getElementById('manager_name_text').value,
+            comment: document.getElementById('comment').value,
+            placement_type: document.querySelector('input[name="placement_type"]:checked')?.value || 'separate',
+            specific_row: row ? parseInt(row) : null,
+            manager_id: tg.initDataUnsafe?.user?.id || 0
+        };
+
+        try {
+            const btn = document.getElementById('finish_btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="icon">⏳</span> Записываю...';
+
+            const res = await fetch(`${API_URL}/api/bookings/submit`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "ngrok-skip-browser-warning": "1"
+                },
+                body: JSON.stringify(data)
+            });
+
+            const json = await res.json().catch(() => ({}));
+
+            if (!res.ok || !json.ok) {
+                const msg = json.error || `Ошибка сервера: ${res.status}`;
+                alert("❌ Ошибка размещения: " + msg);
+                btn.disabled = false;
+                btn.innerHTML = '<span class="icon">✅</span> ЗАВЕРШИТЬ И ЗАПИСАТЬ';
+                return;
+            }
+
+            // Показываем сообщение об успехе
+            alert("✅ Бронь успешно размещена!");
+
+            // Отправляем событие в Telegram для возврата в главное меню
+            tg.sendData(JSON.stringify({
+                action: "booking_completed",
+                saved_rows: json.saved_rows || []
+            }));
+
+            // Закрываем WebApp
+            tg.close();
+        } catch (e) {
+            alert("❌ Ошибка сети: " + e);
+            const btn = document.getElementById('finish_btn');
+            btn.disabled = false;
+            btn.innerHTML = '<span class="icon">✅</span> ЗАВЕРШИТЬ И ЗАПИСАТЬ';
+        }
+    }
+</script>
+</body>
+</html>
