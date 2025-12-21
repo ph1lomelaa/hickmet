@@ -64,25 +64,24 @@ print(f"🔧 MOCK_MODE: {MOCK_MODE}")
 
 # ==================== TELEGRAM ====================
 
+SKIP_BOT = os.getenv("SKIP_BOT", "").lower() in ("1", "true", "yes")
+
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 
-
-if not API_TOKEN or API_TOKEN.startswith("your_"):
-    LOGGER.warning("⚠️ API_TOKEN не установлен. Установите переменную окружения API_TOKEN")
+if SKIP_BOT or not API_TOKEN or API_TOKEN.startswith("your_"):
+    LOGGER.warning("⚠️ Bot init пропущен (SKIP_BOT) или API_TOKEN не задан")
     bot = None
     dp = None
 else:
     try:
-        bot = Bot(
-            token=API_TOKEN,
-            default=DefaultBotProperties(parse_mode="HTML"),
-        )
+        bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
         dp = Dispatcher()
         LOGGER.info("✅ Bot инициализирован")
     except Exception as e:
         LOGGER.error(f"❌ Ошибка инициализации Bot: {e}")
         bot = None
         dp = None
+
 
 # ==================== GOOGLE SHEETS ====================
 
