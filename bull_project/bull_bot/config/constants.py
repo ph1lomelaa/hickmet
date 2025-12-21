@@ -64,7 +64,7 @@ print(f"🔧 MOCK_MODE: {MOCK_MODE}")
 
 # ==================== TELEGRAM ====================
 
-API_TOKEN = os.getenv("API_TOKEN", "8078089873:AAEj2-66Z72EU5zLLmI0zx5B53aYHqNvbZ0")
+API_TOKEN = os.getenv("API_TOKEN", "8078089873:AAGi5ApT1uyFLCN8YWkkyuWGMwSuxEBh-84")
 
 
 if not API_TOKEN or API_TOKEN.startswith("your_"):
