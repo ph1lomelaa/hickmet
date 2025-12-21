@@ -27,11 +27,25 @@ def get_google_client():
         return _client
 
     print(f"🔄 Подключение к Google API...")
-    print(f"🔑 Ищу файл ключей: {CREDENTIALS_FILE}")
 
+    # 1) Пытаемся взять ключи из переменной окружения (удобно для Koyeb/докера)
+    env_creds = os.getenv("GOOGLE_CREDS_JSON")
+    if env_creds:
+        try:
+            import json
+            creds_dict = json.loads(env_creds)
+            creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+            _client = gspread.authorize(creds)
+            print("✅ Google Sheets клиент подключен из GOOGLE_CREDS_JSON")
+            return _client
+        except Exception as e:
+            print(f"❌ Ошибка авторизации через GOOGLE_CREDS_JSON: {e}")
+
+    # 2) Файл на диске (локальная разработка)
+    print(f"🔑 Ищу файл ключей: {CREDENTIALS_FILE}")
     if not os.path.exists(CREDENTIALS_FILE):
         print(f"❌ ОШИБКА: Файл ключей не найден!")
-        print(f"👉 Положи файл service_account.json в папку bull_project/credentials/")
+        print(f"👉 Положи файл service_account.json в папку bull_project/credentials/ или установи GOOGLE_CREDS_JSON")
         return None
 
     try:

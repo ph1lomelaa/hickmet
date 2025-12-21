@@ -766,7 +766,8 @@ async def get_manager_stats(
     try:
         from datetime import datetime
 
-        d1 = datetime.strptime(start_date, "%Y-%m-% d").date()
+        # Формат даты должен быть YYYY-MM-DD (без пробелов)
+        d1 = datetime.strptime(start_date, "%Y-%m-%d").date()
         d2 = datetime.strptime(end_date, "%Y-%m-%d").date()
 
         stats = await get_manager_detailed_stats(manager_id, d1, d2)
@@ -1214,8 +1215,10 @@ async def get_phones_by_package(
 
 # Запуск при старте файла
 if __name__ == "__main__":
+    # Koyeb/Render/etc. прокидывают порт через env, поэтому пробуем PORT/PORT0
+    port = int(os.getenv("PORT") or os.getenv("PORT0") or "8000")
     uvicorn.run(
         app,
         host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", "8000")),
+        port=port,
     )
