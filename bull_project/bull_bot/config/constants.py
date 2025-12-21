@@ -64,23 +64,25 @@ print(f"🔧 MOCK_MODE: {MOCK_MODE}")
 
 # ==================== TELEGRAM ====================
 
-API_TOKEN = os.getenv("API_TOKEN", "8078089873:AAGi5ApT1uyFLCN8YWkkyuWGMwSuxEBh-84")
+API_TOKEN = os.getenv("API_TOKEN", "").strip()
 
 
 if not API_TOKEN or API_TOKEN.startswith("your_"):
-    LOGGER.warning("⚠️ API_TOKEN не установлен или тестовый")
-
-try:
-    bot = Bot(
-        token=API_TOKEN,
-        default=DefaultBotProperties(parse_mode="HTML"),
-    )
-    dp = Dispatcher()
-    LOGGER.info("✅ Bot инициализирован")
-except Exception as e:
-    LOGGER.error(f"❌ Ошибка инициализации Bot: {e}")
+    LOGGER.warning("⚠️ API_TOKEN не установлен. Установите переменную окружения API_TOKEN")
     bot = None
     dp = None
+else:
+    try:
+        bot = Bot(
+            token=API_TOKEN,
+            default=DefaultBotProperties(parse_mode="HTML"),
+        )
+        dp = Dispatcher()
+        LOGGER.info("✅ Bot инициализирован")
+    except Exception as e:
+        LOGGER.error(f"❌ Ошибка инициализации Bot: {e}")
+        bot = None
+        dp = None
 
 # ==================== GOOGLE SHEETS ====================
 

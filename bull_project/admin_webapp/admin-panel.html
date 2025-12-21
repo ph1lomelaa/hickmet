@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Админ Панель - Hickmet Premium</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="/assets/config.js"></script>
+    <script src="config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -380,6 +380,14 @@
             border: 1px solid var(--border-color);
         }
 
+        .passport-image {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 10px;
+            object-fit: cover;
+        }
+
         .booking-item h4 {
             color: var(--accent-dark);
             margin-bottom: 8px;
@@ -736,10 +744,14 @@
                             '<span class="badge badge-success">Активно</span>';
 
                         const createdDate = booking.created_at ? new Date(booking.created_at).toLocaleDateString('ru-RU') : '-';
+                        const passportImage = booking.passport_image_path
+                            ? `<img src="${API_BASE}/api/care/passport-photo/${booking.id}?ngrok-skip-browser-warning=1" class="passport-image" alt="Паспорт" onerror="this.style.display='none'">`
+                            : '';
 
                         html += `
                             <div class="booking-item">
                                 <h4>${booking.guest_last_name} ${booking.guest_first_name}</h4>
+                                ${passportImage}
                                 <p>Пакет: ${booking.package_name}</p>
                                 <p>Лист: ${booking.sheet_name}</p>
                                 <p>Цена: ${booking.price} тг | ${statusBadge}</p>
@@ -895,6 +907,9 @@
                 const statusBadge = getStatusBadge(booking.status);
                 const createdDate = new Date(booking.created_at).toLocaleDateString('ru-RU');
                 const createdTime = new Date(booking.created_at).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+                const passportImage = booking.passport_image_path
+                    ? `<img src="${API_BASE}/api/care/passport-photo/${booking.id}?ngrok-skip-browser-warning=1" class="passport-image" alt="Паспорт" onerror="this.style.display='none'">`
+                    : '';
 
                 html += `
                     <div class="booking-item">
@@ -902,6 +917,7 @@
                             <h4>${booking.guest_last_name} ${booking.guest_first_name}</h4>
                             ${statusBadge}
                         </div>
+                        ${passportImage}
                         <p><strong>Пакет:</strong> ${booking.package_name}</p>
                         <p><strong>Лист:</strong> ${booking.sheet_name}</p>
                         <p><strong>Тип номера:</strong> ${booking.room_type || 'Не указан'}</p>

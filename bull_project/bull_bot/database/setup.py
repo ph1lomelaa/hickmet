@@ -15,7 +15,12 @@ if DATABASE_URL.startswith("postgresql://"):
 elif DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
-engine = create_async_engine(DATABASE_URL)
+# Поднимаем пул с pre_ping и recyclе, чтобы чинить отвалившиеся коннекты
+engine = create_async_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=1800,  # 30 минут
+)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
 async def init_db():

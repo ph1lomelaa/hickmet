@@ -111,6 +111,18 @@ def get_active_tables_for_care() -> Dict[str, str]:
     filtered = {name: table_id for name, table_id in tables.items() if any(y in name for y in years)}
     return filtered or tables
 
+async def resolve_passport_path(booking) -> Optional[str]:
+    """
+    Возвращает путь к паспорту для брони, с фолбэком на последнее фото по ФИО.
+    """
+    passport_path = booking.passport_image_path
+    if not passport_path and booking.guest_last_name and booking.guest_first_name:
+        passport_path = await get_latest_passport_for_person(
+            booking.guest_last_name,
+            booking.guest_first_name
+        )
+    return passport_path
+
 # -----------------------------------------------------------------------------
 # МОДЕЛИ ДАННЫХ (Pydantic)
 # -----------------------------------------------------------------------------
@@ -529,6 +541,7 @@ async def get_manager_history(manager_id: int):
         # Преобразуем в JSON-сериализуемый формат
         bookings_data = []
         for b in bookings:
+            passport_path = await resolve_passport_path(b)
             bookings_data.append({
                 "id": b.id,
                 "manager_id": b.manager_id,
@@ -561,6 +574,7 @@ async def get_manager_history(manager_id: int):
                 "passport_expiry": b.passport_expiry,
                 "guest_iin": b.guest_iin,
                 "client_phone": b.client_phone,
+                "passport_image_path": passport_path,
                 "status": b.status,
                 "created_at": b.created_at.isoformat() if b.created_at else None
             })
@@ -775,6 +789,7 @@ async def get_manager_stats(
         # Преобразуем брони в JSON формат
         bookings_data = []
         for b in stats['bookings']:
+            passport_path = await resolve_passport_path(b)
             bookings_data.append({
                 "id": b.id,
                 "guest_last_name": b.guest_last_name,
@@ -783,6 +798,7 @@ async def get_manager_stats(
                 "sheet_name": b.sheet_name,
                 "price": b.price,
                 "status": b.status,
+                "passport_image_path": passport_path,
                 "created_at": b.created_at.isoformat() if b.created_at else None
             })
 
@@ -848,6 +864,7 @@ async def get_all_bookings(
 
         bookings_data = []
         for b in bookings:
+            passport_path = await resolve_passport_path(b)
             bookings_data.append({
                 "id": b.id,
                 "table_id": b.table_id,
@@ -858,7 +875,7 @@ async def get_all_bookings(
                 "guest_iin": b.guest_iin,
                 "passport_num": b.passport_num,
                 "passport_expiry": b.passport_expiry,
-                "passport_image_path": b.passport_image_path,
+                "passport_image_path": passport_path,
                 "client_phone": b.client_phone,
                 "package_name": b.package_name,
                 "sheet_name": b.sheet_name,
@@ -1129,6 +1146,7 @@ async def get_bookings_in_package_for_care(
 
         bookings_data = []
         for b in bookings:
+            passport_path = await resolve_passport_path(b)
             bookings_data.append({
                 "id": b.id,
                 "last_name": b.guest_last_name or "-",
@@ -1151,7 +1169,7 @@ async def get_bookings_in_package_for_care(
                 "region": b.region or "-",
                 "departure_city": b.departure_city or "-",
                 "source": b.source or "-",
-                "passport_image_path": b.passport_image_path or None,
+                "passport_image_path": passport_path or None,
                 "sheet_row_number": b.sheet_row_number,
                 "created_at": b.created_at.isoformat() if b.created_at else None,
                 "status": b.status
