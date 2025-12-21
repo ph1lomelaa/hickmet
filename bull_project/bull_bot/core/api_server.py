@@ -1212,6 +1212,45 @@ async def get_phones_by_package(
             content={"ok": False, "error": str(e)}
         )
 
+# ============= ДОБАВЬ ЭТО =============
+
+# Корневой маршрут для WebApp
+@app.get("/")
+async def root():
+    """Главная страница"""
+    index_path = os.path.join(CARE_WEBAPP_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"message": "Bull API", "status": "running"}
+
+
+# Раздача всех статических файлов
+@app.get("/{full_path:path}")
+async def catch_all(full_path: str):
+    """Fallback для всех файлов"""
+    
+    # Игнорируем API роуты
+    if full_path.startswith("api/"):
+        return {"error": "API endpoint not found"}
+    
+    # Ищем файл в care_webapp
+    file_path = os.path.join(CARE_WEBAPP_DIR, full_path)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    
+    # Ищем файл в assets
+    asset_path = os.path.join(ASSETS_DIR, full_path)
+    if os.path.exists(asset_path) and os.path.isfile(asset_path):
+        return FileResponse(asset_path)
+    
+    # Для всех остальных запросов возвращаем index.html (SPA fallback)
+    index_path = os.path.join(CARE_WEBAPP_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    
+    return {"error": "Not found"}
+
+# ============= КОНЕЦ =============
 
 # Запуск при старте файла
 if __name__ == "__main__":
