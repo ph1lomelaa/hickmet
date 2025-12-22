@@ -46,6 +46,9 @@ from bull_project.bull_bot.core.google_sheets.writer import (
     clear_booking_in_sheets,
     write_cancelled_booking_red
 )
+from bull_project.bull_bot.config.constants import ABS_UPLOADS_DIR
+# uploads dir is shared via volume on API service
+os.makedirs(ABS_UPLOADS_DIR, exist_ok=True)
 # Инициализация парсера паспортов
 passport_parser = PassportParser(debug=False)
 
@@ -588,6 +591,34 @@ async def get_manager_history(manager_id: int):
         
     except Exception as e:
         print(f"❌ Ошибка получения истории: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": str(e)}
+        )
+
+@app.post("/api/passports/upload")
+async def api_passport_upload(file: UploadFile = File(...)):
+    """
+    Принимает файл паспорта от бота и сохраняет на стороне API (общий volume).
+    Возвращает путь к сохраненному файлу.
+    """
+    try:
+        # Генерируем уникальное имя
+        ts = int(datetime.now().timestamp() * 1000)
+        orig_ext = os.path.splitext(file.filename or "")[1] or ".png"
+        safe_ext = orig_ext if len(orig_ext) <= 5 else ".png"
+        target_path = os.path.join(ABS_UPLOADS_DIR, f"bot_upload_{ts}{safe_ext}")
+
+        # Сохраняем файл
+        with open(target_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        return {"ok": True, "path": target_path}
+    except Exception as e:
+        print(f"❌ Ошибка загрузки паспорта от бота: {e}")
         import traceback
         traceback.print_exc()
         return JSONResponse(

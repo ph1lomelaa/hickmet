@@ -63,6 +63,7 @@ MOCK_MODE = os.getenv("MOCK_MODE", "true").lower() == "false"
 print(f"🔧 MOCK_MODE: {MOCK_MODE}")
 
 # ==================== TELEGRAM ====================
+API_BASE_URL = os.getenv("API_BASE_URL", "").rstrip("/")
 
 SKIP_BOT = os.getenv("SKIP_BOT", "").lower() in ("1", "true", "yes")
 

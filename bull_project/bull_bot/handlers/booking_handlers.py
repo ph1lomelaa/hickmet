@@ -1,7 +1,8 @@
 import os
-import time
 import json
 import urllib.parse
+import time
+import aiohttp
 from aiogram import Router, F, types
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
@@ -13,7 +14,8 @@ from contextlib import suppress
 # --- ИМПОРТЫ ПРОЕКТА ---
 from bull_project.bull_bot.config.constants import (
     ABS_UPLOADS_DIR, bot, POPPLER_PATH,
-    ADMIN_PASSWORD, MANAGER_PASSWORD, CARE_PASSWORD
+    ADMIN_PASSWORD, MANAGER_PASSWORD, CARE_PASSWORD,
+    API_BASE_URL
 )
 from bull_project.bull_bot.config.keyboards import (
     cancel_kb, get_menu_by_role, main_menu_kb, manager_kb
@@ -115,17 +117,16 @@ async def process_passport(message: Message, state: FSMContext):
     ensure_uploads_dir()
     data = await state.get_data()
     curr = data.get('current_pilgrim', 1)
-    ts = int(time.time() * 1000)
     fid = message.document.file_id if message.document else message.photo[-1].file_id
     ext = os.path.splitext(message.document.file_name)[1] if message.document and message.document.file_name else ".jpg"
-    temp_path = os.path.join(ABS_UPLOADS_DIR, f"{message.from_user.id}_p{curr}_{ts}_temp{ext}")
+    temp_path = os.path.join(ABS_UPLOADS_DIR, f"{message.from_user.id}_p{curr}_temp{ext}")
 
     # Сначала загружаем во временный файл
     await bot.download_file((await bot.get_file(fid)).file_path, temp_path)
     print(f"📥 Файл загружен: {temp_path}")
 
     # Конвертируем в PNG (итоговый путь всегда .png)
-    png_path = os.path.join(ABS_UPLOADS_DIR, f"{message.from_user.id}_p{curr}_{ts}.png")
+    png_path = os.path.join(ABS_UPLOADS_DIR, f"{message.from_user.id}_p{curr}.png")
 
     try:
         from pdf2image import convert_from_path
@@ -165,8 +166,7 @@ async def process_passport(message: Message, state: FSMContext):
 
         # 🔥 ИСПРАВЛЕНИЕ: Используем to_dict() для получения всех полей
         p_data = passport_result.to_dict()
-        p_data['passport_image_path'] = path
-        print(f"✅ Путь к паспорту добавлен в данные: {path}")
+        p_data['passport_image_path'] = path  # временно локальный путь
 
         # 🔥 КРИТИЧНО: Добавляем snake_case поля для writer.py
         p_data['last_name'] = p_data.get('Last Name', '-')
@@ -185,6 +185,24 @@ async def process_passport(message: Message, state: FSMContext):
         print(f"  DOB: {p_data.get('Date of Birth')}")
         print(f"  Document Number: {p_data.get('Document Number')}")
         print(f"  IIN: {p_data.get('IIN')}")
+
+        # Загружаем файл на API, если указан API_BASE_URL
+        if API_BASE_URL:
+            try:
+                upload_url = f"{API_BASE_URL}/api/passports/upload"
+                async with aiohttp.ClientSession() as session:
+                    with open(path, "rb") as f:
+                        form = aiohttp.FormData()
+                        form.add_field("file", f, filename=os.path.basename(path))
+                        resp = await session.post(upload_url, data=form)
+                        res_json = await resp.json()
+                        if resp.status == 200 and res_json.get("ok") and res_json.get("path"):
+                            p_data['passport_image_path'] = res_json["path"]
+                            print(f"✅ Паспорт загружен на API: {res_json['path']}")
+                        else:
+                            print(f"⚠️ Не удалось загрузить паспорт на API: status={resp.status}, res={res_json}")
+            except Exception as e:
+                print(f"⚠️ Ошибка загрузки на API: {e}")
 
         with suppress(Exception):
             await msg.delete()
