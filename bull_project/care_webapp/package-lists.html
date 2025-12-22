@@ -169,6 +169,11 @@
             transition: all 0.3s ease;
         }
 
+        .booking-card.cancelled {
+            border-color: var(--danger-bg);
+            background: #fff7f7;
+        }
+
         .booking-card:hover {
             transform: translateY(-2px);
             box-shadow: var(--shadow-medium);
@@ -671,7 +676,7 @@
                 const passportImage = booking.passport_image_path;
 
                 const card = document.createElement('div');
-                card.className = 'booking-card';
+                card.className = status === 'cancelled' ? 'booking-card cancelled' : 'booking-card';
 
                 let html = `
                     <div class="booking-header">
@@ -704,6 +709,7 @@
                             <div class="booking-detail">Виза: <strong>${visaStatus}</strong></div>
                             ${avia !== '-' ? `<div class="booking-detail">Авиа: <strong>${avia}</strong></div>` : ''}
                             ${train !== '-' ? `<div class="booking-detail">Поезд: <strong>${train}</strong></div>` : ''}
+                            <div class="booking-detail">Менеджер: <strong>${managerName}</strong></div>
                         </div>
                         <div class="details-section">
                             <div class="details-section-title">Финансы</div>
@@ -715,8 +721,9 @@
                             <div class="booking-detail">${comment === '-' ? '—' : comment}</div>
                         </div>
                         <div class="details-section">
-                            <div class="booking-detail">Менеджер: <strong>${managerName}</strong></div>
-                            <div class="booking-detail">Создано: <strong>${createdLabel}</strong></div>
+                            <div class="details-section-title">Документы и время</div>
+                            <div class="booking-detail">Дата создания: <strong>${createdLabel}</strong></div>
+                            <div class="booking-detail">Статус: <strong>${statusText}</strong></div>
                         </div>
                     </div>
                 `;

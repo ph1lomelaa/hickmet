@@ -302,6 +302,12 @@
         .hidden {
             display: none;
         }
+
+        /* Перестраховка: если контейнеры случайно продублируются, прячем дубликаты */
+        body > .header + .header,
+        body > .search-container + .search-container {
+            display: none;
+        }
     </style>
 </head>
 <body>

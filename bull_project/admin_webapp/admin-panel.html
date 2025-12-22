@@ -834,8 +834,28 @@
             }
         }
 
+        // Показываем полный список найденных пакетов (без обрезки)
+        let lastPackages = [];
+
+        // Сохраняем результаты поиска
+        const originalSearchPackages = searchPackages;
+        searchPackages = async function() {
+            await originalSearchPackages();
+            const container = document.getElementById('packages-results');
+            // Если контейнер уже содержит данные, кешируем их
+            const cards = container.querySelectorAll('.booking-item');
+            if (cards.length) {
+                lastPackages = Array.from(cards).map(card => card.outerHTML).join('');
+            }
+        };
+
         function expandPackages() {
-            tg.showAlert('Развернутый список будет доступен в следующей версии');
+            const container = document.getElementById('packages-results');
+            if (!lastPackages || lastPackages.length === 0) {
+                tg.showAlert('Сначала выполните поиск по дате');
+                return;
+            }
+            container.innerHTML = `<div class="bookings-container">${lastPackages}</div>`;
         }
 
         // === СПИСОК БРОНЕЙ ===

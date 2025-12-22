@@ -1,4 +1,5 @@
 import os
+import time
 import json
 import urllib.parse
 from aiogram import Router, F, types
@@ -114,16 +115,17 @@ async def process_passport(message: Message, state: FSMContext):
     ensure_uploads_dir()
     data = await state.get_data()
     curr = data.get('current_pilgrim', 1)
+    ts = int(time.time() * 1000)
     fid = message.document.file_id if message.document else message.photo[-1].file_id
     ext = os.path.splitext(message.document.file_name)[1] if message.document and message.document.file_name else ".jpg"
-    temp_path = os.path.join(ABS_UPLOADS_DIR, f"{message.from_user.id}_p{curr}_temp{ext}")
+    temp_path = os.path.join(ABS_UPLOADS_DIR, f"{message.from_user.id}_p{curr}_{ts}_temp{ext}")
 
     # Сначала загружаем во временный файл
     await bot.download_file((await bot.get_file(fid)).file_path, temp_path)
     print(f"📥 Файл загружен: {temp_path}")
 
     # Конвертируем в PNG (итоговый путь всегда .png)
-    png_path = os.path.join(ABS_UPLOADS_DIR, f"{message.from_user.id}_p{curr}.png")
+    png_path = os.path.join(ABS_UPLOADS_DIR, f"{message.from_user.id}_p{curr}_{ts}.png")
 
     try:
         from pdf2image import convert_from_path
