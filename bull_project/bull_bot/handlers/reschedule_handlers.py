@@ -12,10 +12,10 @@ from bull_project.bull_bot.core.google_sheets.client import (
     get_accessible_tables, get_packages_from_sheet, get_sheet_names
 )
 from bull_project.bull_bot.database.requests import (
-    get_booking_by_id, add_booking_to_db, update_booking_row, mark_booking_cancelled, get_user_by_id
+    get_booking_by_id, add_booking_to_db, update_booking_row, mark_booking_rescheduled, get_user_by_id
 )
 from bull_project.bull_bot.core.google_sheets.writer import (
-    save_group_booking, check_train_exists, clear_booking_in_sheets
+    save_group_booking, check_train_exists, clear_booking_in_sheets, write_rescheduled_booking_red
 )
 # Импортируем BookingFlow из booking_handlers, чтобы состояния не конфликтовали
 from bull_project.bull_bot.handlers.booking_handlers import BookingFlow
@@ -105,21 +105,65 @@ async def finalize_reschedule(message: Message, state: FSMContext):
             # Обновляем строку в БД
             await update_booking_row(new_booking_id, saved_rows[0])
 
-            # 🔥 УДАЛЕНИЕ СТАРОЙ БРОНИ
+            # 🔥 ОБРАБОТКА СТАРОЙ БРОНИ (аналогично отмене)
             old_id = data.get('old_booking_id')
             old_b = await get_booking_by_id(old_id)
 
-            if old_b and old_b.sheet_row_number:
-                await clear_booking_in_sheets(old_b.table_id, old_b.sheet_name, old_b.sheet_row_number, old_b.package_name)
-                await mark_booking_cancelled(old_id)
+            if old_b:
+                # 1. Очищаем данные из строки
+                sheets_cleared = False
+                if old_b.sheet_row_number and old_b.table_id and old_b.sheet_name:
+                    sheets_cleared = await clear_booking_in_sheets(
+                        old_b.table_id,
+                        old_b.sheet_name,
+                        old_b.sheet_row_number,
+                        old_b.package_name
+                    )
 
-            await message.answer(
-                f"✅ <b>Успешно перенесено!</b>\n"
-                f"Старая бронь #{old_id} удалена.\n"
-                f"Новая бронь #{new_booking_id} создана на строке {saved_rows[0]}.",
-                reply_markup=get_menu_by_role(user_db.role if user_db else 'manager'),
-                parse_mode="HTML"
-            )
+                # 2. Записываем перенос красным цветом с отступом
+                red_written = False
+                if old_b.table_id and old_b.sheet_name and old_b.package_name:
+                    guest_name = f"{old_b.guest_last_name} {old_b.guest_first_name}"
+                    red_written = await write_rescheduled_booking_red(
+                        old_b.table_id,
+                        old_b.sheet_name,
+                        old_b.package_name,
+                        guest_name
+                    )
+
+                # 3. Помечаем в БД как перенесенную
+                await mark_booking_rescheduled(old_id, comment=f"Перенесено в #{new_booking_id}")
+
+                # Формируем сообщение о результате
+                status_parts = []
+                if sheets_cleared:
+                    status_parts.append("✅ Данные очищены из таблицы")
+                else:
+                    status_parts.append("⚠️ Не удалось очистить данные (очистите вручную)")
+
+                if red_written:
+                    status_parts.append("✅ Перенос записан красным цветом")
+                else:
+                    status_parts.append("⚠️ Не удалось записать перенос красным")
+
+                status_parts.append(f"✅ Новая бронь #{new_booking_id} создана на строке {saved_rows[0]}")
+
+                await message.answer(
+                    f"♻️ <b>БРОНЬ #{old_id} ПЕРЕНЕСЕНА</b>\n\n"
+                    f"<b>Паломник:</b> {old_b.guest_last_name} {old_b.guest_first_name}\n"
+                    f"<b>Новая бронь:</b> #{new_booking_id}\n\n"
+                    f"<b>Статус операции:</b>\n"
+                    + "\n".join(f"• {s}" for s in status_parts),
+                    reply_markup=get_menu_by_role(user_db.role if user_db else 'manager'),
+                    parse_mode="HTML"
+                )
+            else:
+                await message.answer(
+                    f"✅ <b>Успешно перенесено!</b>\n"
+                    f"Новая бронь #{new_booking_id} создана на строке {saved_rows[0]}.",
+                    reply_markup=get_menu_by_role(user_db.role if user_db else 'manager'),
+                    parse_mode="HTML"
+                )
         else:
             await message.answer("⚠️ Ошибка записи в таблицу! (Бронь в БД создана, но в Гугл не попала).")
 

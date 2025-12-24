@@ -256,3 +256,64 @@ async def write_cancelled_booking_red(sheet_id, sheet_name, package_name, guest_
         import traceback
         traceback.print_exc()
         return False
+
+async def write_rescheduled_booking_red(sheet_id, sheet_name, package_name, guest_name):
+    """Записывает перенос красным цветом внизу блока пакета"""
+    from bull_project.bull_bot.core.google_sheets.allocator import get_package_block
+    client = get_google_client()
+    if not client:
+        print("❌ Google client не инициализирован")
+        return False
+
+    try:
+        ss = client.open_by_key(sheet_id)
+        ws = get_worksheet_by_title(ss, sheet_name)
+        all_values = ws.get_all_values()
+
+        # Находим блок пакета
+        header_row, end_row, cols = get_package_block(all_values, package_name)
+        if not header_row or not cols:
+            print(f"❌ Не найден блок пакета {package_name}")
+            return False
+
+        # Отступаем 15 строк от конца блока
+        rescheduled_row = end_row + 15
+
+        print(f"📝 Записываем перенос в строку {rescheduled_row}")
+
+        # Находим колонку для записи имени
+        name_col = cols.get('last_name')
+        if not name_col:
+            print("❌ Не найдена колонка для имени")
+            return False
+
+        # Записываем имя
+        cell_range = row_col_to_a1(rescheduled_row, name_col + 1)
+        ws.update(cell_range, [[f"♻️ ПЕРЕНОС: {guest_name}"]])
+
+        # Форматируем красным цветом (как отмена)
+        ws.format(cell_range, {
+            "backgroundColor": {
+                "red": 1.0,
+                "green": 0.8,
+                "blue": 0.8
+            },
+            "textFormat": {
+                "foregroundColor": {
+                    "red": 0.8,
+                    "green": 0.0,
+                    "blue": 0.0
+                },
+                "fontSize": 11,
+                "bold": True
+            }
+        })
+
+        print(f"✅ Перенос записан красным в строку {rescheduled_row}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка записи переноса: {e}")
+        import traceback
+        traceback.print_exc()
+        return False

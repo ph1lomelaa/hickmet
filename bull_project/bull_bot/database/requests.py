@@ -77,6 +77,16 @@ async def mark_booking_cancelled(booking_id: int):
             b.status = 'cancelled'
             await session.commit()
 
+async def mark_booking_rescheduled(booking_id: int, comment: str = None):
+    """Помечает бронь как перенесенную"""
+    async with async_session() as session:
+        b = await session.get(Booking, booking_id)
+        if b:
+            b.status = 'rescheduled'
+            if comment:
+                b.comment = comment
+            await session.commit()
+
 # === ИСТОРИЯ И ПОИСК ===
 
 async def get_manager_packages(manager_id: int):
@@ -85,7 +95,7 @@ async def get_manager_packages(manager_id: int):
         # Select distinct package_name
         stmt = select(distinct(Booking.package_name)).where(
             Booking.manager_id == manager_id,
-            Booking.status != 'cancelled'
+            Booking.status.notin_(('cancelled', 'rescheduled'))
         ).order_by(desc(Booking.created_at))
 
         result = await session.scalars(stmt)
@@ -97,7 +107,7 @@ async def get_bookings_in_package(manager_id: int, pkg_name: str):
         query = select(Booking).where(
             Booking.manager_id == manager_id,
             Booking.package_name == pkg_name,
-            Booking.status != 'cancelled'
+            Booking.status.notin_(('cancelled', 'rescheduled'))
         ).order_by(desc(Booking.created_at))
         result = await session.scalars(query)
         return result.all()
@@ -138,7 +148,7 @@ async def search_tourist_by_name(query_str: str):
         full_name_rev = func.trim(func.concat(first, " ", last))
 
         stmt = select(Booking).where(
-            Booking.status != 'cancelled',
+            Booking.status.notin_(('cancelled', 'rescheduled')),
             or_(
                 Booking.guest_last_name.ilike(flex_search),
                 Booking.guest_first_name.ilike(flex_search),
@@ -161,7 +171,7 @@ async def get_latest_passport_for_person(last_name: str, first_name: str):
                 Booking.guest_last_name == last_name,
                 Booking.guest_first_name == first_name,
                 Booking.passport_image_path.isnot(None),
-                Booking.status != 'cancelled'
+                Booking.status.notin_(('cancelled', 'rescheduled'))
             )
             .order_by(desc(Booking.created_at))
             .limit(1)
@@ -176,7 +186,7 @@ async def get_db_packages_list(sheet_id: str, sheet_name: str):
         stmt = select(distinct(Booking.package_name)).where(
             Booking.table_id == sheet_id,
             Booking.sheet_name == sheet_name,
-            Booking.status != 'cancelled'
+            Booking.status.notin_(('cancelled', 'rescheduled'))
         )
         result = await session.scalars(stmt)
         return result.all()
@@ -188,7 +198,7 @@ async def get_all_bookings_in_package(sheet_id: str, sheet_name: str, pkg_name: 
             Booking.table_id == sheet_id,
             Booking.sheet_name == sheet_name,
             Booking.package_name == pkg_name,
-            Booking.status != 'cancelled'
+            Booking.status.notin_(('cancelled', 'rescheduled'))
         ).order_by(Booking.sheet_row_number)
         result = await session.scalars(query)
         return result.all()
@@ -197,7 +207,7 @@ async def get_all_bookings_in_package(sheet_id: str, sheet_name: str, pkg_name: 
 
 async def get_manager_bookings_by_period(manager_id: int, period: str):
     async with async_session() as session:
-        query = select(Booking).where(Booking.manager_id == manager_id, Booking.status != 'cancelled')
+        query = select(Booking).where(Booking.manager_id == manager_id, Booking.status.notin_(('cancelled', 'rescheduled')))
         now = datetime.now()
 
         if period == 'today':
@@ -215,7 +225,7 @@ async def get_bookings_by_package_full(sheet_name: str, pkg_name: str):
         query = select(Booking).where(
             Booking.sheet_name == sheet_name,
             Booking.package_name == pkg_name,
-            Booking.status != 'cancelled'
+            Booking.status.notin_(('cancelled', 'rescheduled'))
         ).order_by(Booking.sheet_row_number)
         result = await session.scalars(query)
         return result.all()
@@ -248,16 +258,16 @@ async def close_4u_request(rid):
 # === RNP ===
 async def get_rnp_by_specific_date(date_obj):
     async with async_session() as session:
-        return await session.scalar(select(func.count(Booking.id)).where(func.date(Booking.created_at) == date_obj, Booking.status != 'cancelled')) or 0
+        return await session.scalar(select(func.count(Booking.id)).where(func.date(Booking.created_at) == date_obj, Booking.status.notin_(('cancelled', 'rescheduled')))) or 0
 
 async def get_rnp_by_date_range(d1, d2):
     async with async_session() as session:
-        return await session.scalar(select(func.count(Booking.id)).where(func.date(Booking.created_at) >= d1, func.date(Booking.created_at) <= d2, Booking.status != 'cancelled')) or 0
+        return await session.scalar(select(func.count(Booking.id)).where(func.date(Booking.created_at) >= d1, func.date(Booking.created_at) <= d2, Booking.status.notin_(('cancelled', 'rescheduled')))) or 0
 
 async def get_sales_dynamics_stats(days=10):
     async with async_session() as session:
         start = datetime.now().date() - timedelta(days=days)
-        stmt = select(func.date(Booking.created_at).label('d'), func.count(Booking.id)).where(Booking.status != 'cancelled', func.date(Booking.created_at) >= start).group_by('d').order_by('d')
+        stmt = select(func.date(Booking.created_at).label('d'), func.count(Booking.id)).where(Booking.status.notin_(('cancelled', 'rescheduled')), func.date(Booking.created_at) >= start).group_by('d').order_by('d')
         res = await session.execute(stmt)
         return res.all()
 
@@ -265,7 +275,7 @@ async def get_all_bookings_by_period(start_date, end_date):
     """Все брони всех менеджеров за период"""
     async with async_session() as session:
         query = select(Booking).where(
-            Booking.status != 'cancelled',
+            Booking.status.notin_(('cancelled', 'rescheduled')),
             func.date(Booking.created_at) >= start_date,
             func.date(Booking.created_at) <= end_date
         ).order_by(desc(Booking.created_at))
@@ -277,7 +287,7 @@ async def get_last_n_bookings_by_manager(manager_id: int, limit=10, include_canc
     async with async_session() as session:
         query = select(Booking).where(Booking.manager_id == manager_id)
         if not include_cancelled:
-            query = query.where(Booking.status != 'cancelled')
+            query = query.where(Booking.status.notin_(('cancelled', 'rescheduled')))
         query = query.order_by(desc(Booking.created_at)).limit(limit)
         result = await session.scalars(query)
         return result.all()
@@ -300,7 +310,7 @@ async def get_detailed_stats_by_period(start_date, end_date):
         # 1. Общее
         total = await session.scalar(
             select(func.count(Booking.id)).where(
-                Booking.status != 'cancelled',
+                Booking.status.notin_(('cancelled', 'rescheduled')),
                 func.date(Booking.created_at) >= start_date,
                 func.date(Booking.created_at) <= end_date
             )
@@ -310,7 +320,7 @@ async def get_detailed_stats_by_period(start_date, end_date):
         top_pkg_stmt = (
             select(Booking.package_name, func.count(Booking.id).label('cnt'))
             .where(
-                Booking.status != 'cancelled',
+                Booking.status.notin_(('cancelled', 'rescheduled')),
                 func.date(Booking.created_at) >= start_date,
                 func.date(Booking.created_at) <= end_date
             )
@@ -324,7 +334,7 @@ async def get_detailed_stats_by_period(start_date, end_date):
         man_stmt = (
             select(Booking.manager_name_text, func.count(Booking.id).label('cnt'))
             .where(
-                Booking.status != 'cancelled',
+                Booking.status.notin_(('cancelled', 'rescheduled')),
                 func.date(Booking.created_at) >= start_date,
                 func.date(Booking.created_at) <= end_date
             )
@@ -347,7 +357,7 @@ async def get_bookings_by_manager_date_range(manager_id: int, start_date, end_da
     async with async_session() as session:
         query = select(Booking).where(
             Booking.manager_id == manager_id,
-            Booking.status != 'cancelled',
+            Booking.status.notin_(('cancelled', 'rescheduled')),
             func.date(Booking.created_at) >= start_date,
             func.date(Booking.created_at) <= end_date
         ).order_by(desc(Booking.created_at))
@@ -384,7 +394,7 @@ async def get_full_analytics(start_date, end_date):
             select(func.count(Booking.id)).where(
                 func.date(Booking.created_at) >= start_date,
                 func.date(Booking.created_at) <= end_date,
-                Booking.status != 'cancelled'
+                Booking.status.notin_(('cancelled', 'rescheduled'))
             )
         ) or 0
 
@@ -400,7 +410,7 @@ async def get_full_analytics(start_date, end_date):
         top_packages_stmt = (
             select(Booking.package_name, func.count(Booking.id).label('cnt'))
             .where(
-                Booking.status != 'cancelled',
+                Booking.status.notin_(('cancelled', 'rescheduled')),
                 func.date(Booking.created_at) >= start_date,
                 func.date(Booking.created_at) <= end_date
             )
@@ -432,7 +442,7 @@ async def get_full_analytics(start_date, end_date):
         rooms_stmt = (
             select(Booking.room_type, func.count(Booking.id).label('cnt'))
             .where(
-                Booking.status != 'cancelled',
+                Booking.status.notin_(('cancelled', 'rescheduled')),
                 func.date(Booking.created_at) >= start_date,
                 func.date(Booking.created_at) <= end_date
             )
@@ -448,7 +458,7 @@ async def get_full_analytics(start_date, end_date):
                 func.count(Booking.id).label('count')
             )
             .where(
-                Booking.status != 'cancelled',
+                Booking.status.notin_(('cancelled', 'rescheduled')),
                 func.date(Booking.created_at) >= start_date,
                 func.date(Booking.created_at) <= end_date
             )
@@ -481,16 +491,18 @@ async def get_manager_detailed_stats(manager_id: int, start_date, end_date):
         all_bookings = bookings.all()
 
         # Активные
-        active_count = sum(1 for b in all_bookings if b.status != 'cancelled')
+        active_count = sum(1 for b in all_bookings if b.status not in ('cancelled', 'rescheduled'))
         # Отмененные
         cancelled_count = sum(1 for b in all_bookings if b.status == 'cancelled')
+        # Перенесенные
+        rescheduled_count = sum(1 for b in all_bookings if b.status == 'rescheduled')
 
         # ТОП пакетов этого менеджера
         top_packages_stmt = (
             select(Booking.package_name, func.count(Booking.id).label('cnt'))
             .where(
                 Booking.manager_id == manager_id,
-                Booking.status != 'cancelled',
+                Booking.status.notin_(('cancelled', 'rescheduled')),
                 func.date(Booking.created_at) >= start_date,
                 func.date(Booking.created_at) <= end_date
             )
@@ -503,6 +515,7 @@ async def get_manager_detailed_stats(manager_id: int, start_date, end_date):
             "total": len(all_bookings),
             "active": active_count,
             "cancelled": cancelled_count,
+            "rescheduled": rescheduled_count,
             "top_packages": [(name, cnt) for name, cnt in manager_top_packages],
             "bookings": all_bookings
         }
@@ -520,7 +533,7 @@ async def search_packages_by_date(date_str: str):
             )
             .where(
                 Booking.sheet_name.like(search),
-                Booking.status != 'cancelled'
+                Booking.status.notin_(('cancelled', 'rescheduled'))
             )
             .group_by(Booking.sheet_name, Booking.package_name)
             .order_by(desc('cnt'))

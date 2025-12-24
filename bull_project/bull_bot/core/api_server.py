@@ -541,11 +541,11 @@ async def get_manager_history(manager_id: int):
                 "message": "История пуста"
             }
         
-        # Преобразуем в JSON-сериализуемый формат
+        
         bookings_data = []
         for b in bookings:
             passport_path = await resolve_passport_path(b)
-            bookings_data.append({
+            bookings_data.append( {
                 "id": b.id,
                 "manager_id": b.manager_id,
                 "table_id": b.table_id,
