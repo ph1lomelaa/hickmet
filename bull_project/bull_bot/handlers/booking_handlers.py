@@ -324,6 +324,11 @@ async def handle_webapp_data(message: Message, state: FSMContext):
     # Старая логика для формы с FSM
     data = await state.get_data()
     pilgrims = data.get("pilgrims_list", [])
+    # Если это перенос и список не проставлен, пробуем взять сохраненный паспорт
+    if (not pilgrims) and data.get("is_reschedule") and data.get("reschedule_passport"):
+        pilgrims = [data.get("reschedule_passport")]
+        await state.update_data(pilgrims_list=pilgrims, total_pilgrims=len(pilgrims))
+
     if not pilgrims:
         await message.answer("⚠️ Не нашёл список паломников в состоянии. Начните бронирование заново.")
         await state.clear()
