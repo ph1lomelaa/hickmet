@@ -197,6 +197,14 @@ async def clear_booking_in_sheets(sheet_id, sheet_name, row_number, package_name
         return False
     except: return False
 
+def find_last_content_row(all_values):
+    """Находит последнюю строку с содержимым на листе"""
+    for r in range(len(all_values) - 1, -1, -1):
+        row_text = "".join([str(c).strip() for c in all_values[r]])
+        if len(row_text) > 2:  # Есть какой-то контент
+            return r + 1  # +1 потому что индексы с 0
+    return len(all_values)
+
 async def write_cancelled_booking_red(sheet_id, sheet_name, package_name, guest_name):
     from bull_project.bull_bot.core.google_sheets.allocator import get_package_block
     client = get_google_client()
@@ -209,16 +217,18 @@ async def write_cancelled_booking_red(sheet_id, sheet_name, package_name, guest_
         ws = get_worksheet_by_title(ss, sheet_name)
         all_values = ws.get_all_values()
 
-        # Находим блок пакета
-        header_row, end_row, cols = get_package_block(all_values, package_name)
-        if not header_row or not cols:
+        # Находим блок пакета (нужно для получения колонки)
+        _, _, cols = get_package_block(all_values, package_name)
+        if not cols:
             print(f"❌ Не найден блок пакета {package_name}")
             return False
 
-        # Отступаем 15 строк от конца блока
-        cancelled_row = end_row + 15
+        # 🔥 НАХОДИМ ПОСЛЕДНЮЮ СТРОКУ НА ВСЕМ ЛИСТЕ
+        last_row = find_last_content_row(all_values)
+        # Отступаем 15 строк от конца ВСЕГО листа
+        cancelled_row = last_row + 15
 
-        print(f"📝 Записываем отмену в строку {cancelled_row}")
+        print(f"📝 Записываем отмену в строку {cancelled_row} (последняя строка листа: {last_row})")
 
         # Находим колонку для записи имени
         name_col = cols.get('last_name')
@@ -270,16 +280,18 @@ async def write_rescheduled_booking_red(sheet_id, sheet_name, package_name, gues
         ws = get_worksheet_by_title(ss, sheet_name)
         all_values = ws.get_all_values()
 
-        # Находим блок пакета
-        header_row, end_row, cols = get_package_block(all_values, package_name)
-        if not header_row or not cols:
+        # Находим блок пакета (нужно для получения колонки)
+        _, _, cols = get_package_block(all_values, package_name)
+        if not cols:
             print(f"❌ Не найден блок пакета {package_name}")
             return False
 
-        # Отступаем 15 строк от конца блока
-        rescheduled_row = end_row + 15
+        # 🔥 НАХОДИМ ПОСЛЕДНЮЮ СТРОКУ НА ВСЕМ ЛИСТЕ
+        last_row = find_last_content_row(all_values)
+        # Отступаем 15 строк от конца ВСЕГО листа
+        rescheduled_row = last_row + 15
 
-        print(f"📝 Записываем перенос в строку {rescheduled_row}")
+        print(f"📝 Записываем перенос в строку {rescheduled_row} (последняя строка листа: {last_row})")
 
         # Находим колонку для записи имени
         name_col = cols.get('last_name')

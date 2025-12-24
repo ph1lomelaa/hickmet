@@ -149,17 +149,140 @@ class PassportParser:
         except (ValueError, IndexError):
             return ""
 
+    def _levenshtein_distance(self, s1: str, s2: str) -> int:
+        """Вычисляет расстояние Левенштейна между двумя строками"""
+        if len(s1) < len(s2):
+            return self._levenshtein_distance(s2, s1)
+
+        if len(s2) == 0:
+            return len(s1)
+
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+
+        return previous_row[-1]
+
+    def _are_similar_words(self, word1: str, word2: str) -> bool:
+        """Проверяет, похожи ли два слова (возможно один вариант - ошибка OCR)"""
+        if not word1 or not word2:
+            return False
+
+        w1, w2 = word1.upper(), word2.upper()
+        if w1 == w2:
+            return True
+
+        # Слова должны быть примерно одной длины
+        if abs(len(w1) - len(w2)) > 3:
+            return False
+
+        # Вычисляем расстояние Левенштейна
+        distance = self._levenshtein_distance(w1, w2)
+        max_len = max(len(w1), len(w2))
+
+        # Если слова похожи на 60% и более - считаем дубликатами
+        similarity = 1 - (distance / max_len)
+        if similarity >= 0.6:
+            return True
+
+        # Дополнительная проверка: начинаются похоже и заканчиваются похоже
+        if len(w1) >= 4 and len(w2) >= 4:
+            # Проверяем, что хотя бы 3 из первых 4 букв совпадают
+            matches = sum(1 for i in range(min(4, len(w1), len(w2))) if i < len(w1) and i < len(w2) and w1[i] == w2[i])
+            if matches >= 3:
+                return True
+
+        return False
+
+    def _remove_similar_duplicates(self, parts: list) -> list:
+        """Удаляет похожие дубликаты из списка слов (оставляет более правильный вариант)"""
+        if len(parts) <= 1:
+            return parts
+
+        cleaned = []
+        skip_indices = set()
+
+        for i, word in enumerate(parts):
+            if i in skip_indices:
+                continue
+
+            # Проверяем, есть ли похожее слово дальше
+            found_similar = False
+            for j in range(i + 1, len(parts)):
+                if j in skip_indices:
+                    continue
+
+                if self._are_similar_words(word, parts[j]):
+                    # Нашли похожее слово - выбираем лучшее
+                    # Критерий: слово с большим количеством заглавных латинских букв
+                    word_latin_count = sum(1 for c in word if c.isupper() and c.isalpha() and ord('A') <= ord(c) <= ord('Z'))
+                    other_latin_count = sum(1 for c in parts[j] if c.isupper() and c.isalpha() and ord('A') <= ord(c) <= ord('Z'))
+
+                    if other_latin_count > word_latin_count:
+                        # Другое слово лучше - пропускаем текущее
+                        skip_indices.add(i)
+                        found_similar = True
+                        break
+                    else:
+                        # Текущее слово лучше - пропускаем другое
+                        skip_indices.add(j)
+
+            if not found_similar:
+                cleaned.append(word)
+
+        return cleaned
+
+    def _smart_name_split(self, name_string: str) -> tuple:
+        """Умное разделение полного имени на фамилию и имя"""
+        if not name_string:
+            return ("", "")
+
+        # Убираем лишние пробелы и разбиваем
+        parts = name_string.strip().split()
+
+        if len(parts) == 0:
+            return ("", "")
+
+        # Удаляем похожие дубликаты (OCR часто видит одно слово дважды)
+        parts = self._remove_similar_duplicates(parts)
+
+        if len(parts) == 0:
+            return ("", "")
+        elif len(parts) == 1:
+            # Если только одно слово - считаем фамилией
+            return (parts[0], "")
+        else:
+            # Первое слово - фамилия, остальные - имя
+            last_name = parts[0]
+            first_name = " ".join(parts[1:])
+            return (last_name, first_name)
+
     def parse_mrz(self, text: str) -> dict:
         """Парсинг MRZ (Machine Readable Zone) - строка внизу паспорта"""
         mrz_data = {}
         raw_lines = [line.strip().replace(" ", "") for line in text.splitlines()]
-        mrz_lines = [re.sub(r'[^A-Z0-9<]', '', line) for line in raw_lines if len(re.sub(r'[^A-Z0-9<]', '', line)) >= 25]
+        # Расширяем для поддержки кириллицы в MRZ
+        mrz_lines = [re.sub(r'[^A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9<]', '', line, flags=re.IGNORECASE) for line in raw_lines if len(re.sub(r'[^A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9<]', '', line, flags=re.IGNORECASE)) >= 25]
 
         if len(mrz_lines) < 2:
+            # Ищем паттерн с двойными шевронами
             match = re.search(r'([A-Z]{2,})<<([A-Z]{2,})', text)
             if match:
                 mrz_data["last_name"] = match.group(1).replace("<", "")
                 mrz_data["first_name"] = match.group(2).replace("<", "")
+                return mrz_data
+
+            # Ищем паттерн с одинарными шевронами или пробелами
+            match = re.search(r'([A-Z]{2,})\s+([A-Z]{2,})', text)
+            if match:
+                mrz_data["last_name"] = match.group(1)
+                mrz_data["first_name"] = match.group(2)
             return mrz_data
 
         line1, line2 = mrz_lines[-2], mrz_lines[-1]
@@ -167,15 +290,32 @@ class PassportParser:
             print(f"✅ MRZ строка 1: {line1}")
             print(f"✅ MRZ строка 2: {line2}")
 
-        if line1.startswith("P<") and len(line1) > 5:
-            name_field = line1[5:]
+        # Обрабатываем стандартный формат MRZ
+        if line1.startswith("P<"):
+            # Формат: P<XXX где XXX = код страны (3 буквы)
+            # После кода страны идет фамилия
+            if len(line1) > 5:
+                # P< + 3 буквы кода = 5 символов
+                name_field = line1[5:]
+            else:
+                name_field = line1[2:]  # Fallback: просто убираем P<
         else:
             name_field = line1
+
+        # Разделяем по двойным шевронам
         name_part = name_field.split("<<", 1)
         if name_part:
             mrz_data["last_name"] = name_part[0].replace("<", "")
             if len(name_part) > 1:
-                mrz_data["first_name"] = name_part[1].replace("<", " ").strip()
+                # Убираем одинарные шевроны и лишние пробелы
+                first_name_raw = name_part[1].replace("<", " ").strip()
+                mrz_data["first_name"] = first_name_raw
+            elif not mrz_data.get("first_name"):
+                # Если нет двойных шевронов, пробуем разделить по одинарным
+                name_parts = name_field.replace("<", " ").split()
+                if len(name_parts) > 1:
+                    mrz_data["last_name"] = name_parts[0]
+                    mrz_data["first_name"] = " ".join(name_parts[1:])
 
         if len(line2) >= 9:
             mrz_doc = line2[0:9].replace("<", "")
@@ -274,35 +414,95 @@ class PassportParser:
             r'(?:Last\s*Name)[\s:]*\n+([A-Z\s]+)',
         ]
 
+        raw_last_name = ""
         for pattern in surname_patterns:
             surname_match = re.search(pattern, text, re.IGNORECASE)
             if surname_match:
-                data.last_name = surname_match.group(1).strip()
-                if self.debug:
-                    print(f"✅ Фамилия: {data.last_name}")
-                break
+                raw_last_name = surname_match.group(1).strip()
+                # Парсим все строки и выбираем латиницу если есть
+                lines = raw_last_name.split('\n')
+                best_line = None
+                for line in lines:
+                    clean = line.strip()
+                    if not clean or not re.match(r'^[A-ZА-ЯӘӨҮҰҒҚҢҺІЁ\s]+$', clean):
+                        continue
+                    # Считаем латинские буквы
+                    latin_count = sum(1 for c in clean if c.isupper() and ord('A') <= ord(c) <= ord('Z'))
+                    if best_line is None:
+                        best_line = clean
+                    elif latin_count > sum(1 for c in best_line if c.isupper() and ord('A') <= ord(c) <= ord('Z')):
+                        best_line = clean  # Это латиница - лучше
+
+                if best_line:
+                    data.last_name = best_line
+                    if self.debug:
+                        print(f"✅ Фамилия: {data.last_name}")
+                    break
 
         # Имя
         name_patterns = [
-            r'(?:АТЫ|Given\s*name|First\s*Name)[\s:]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁA-Z\s]+)',
+            r'(?:АТЫ|Given\s*names?|First\s*Names?)[\s:]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁA-Z\s]+)',
+            # Более гибкий паттерн - ищем GIVEN NAMES даже если перед ним мусор
+            r'GIVEN\s*NAMES?[\s:]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁA-Z\s]+)',
+            # Ищем АТЫ + пропускаем всю строку с мусором + захватываем имя на следующей строке
+            r'АТЫ[^\n]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ\s]+)',
         ]
 
+        raw_first_name = ""
         for pattern in name_patterns:
             name_match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
             if name_match:
                 name_text = name_match.group(1).strip()
-                # Берем только первую строку (может быть и латиница, и кириллица)
+                # Парсим все строки и выбираем латиницу если есть
                 lines = name_text.split('\n')
+                best_name = None
                 for line in lines:
                     clean_line = line.strip()
-                    # Проверяем, что это только буквы
-                    if clean_line and re.match(r'^[A-ZА-ЯӘӨҮҰҒҚҢҺІЁ\s]+$', clean_line):
-                        data.first_name = clean_line
-                        if self.debug:
-                            print(f"✅ Имя: {data.first_name}")
-                        break
+                    # Убираем маленькие буквы в начале (мусор OCR)
+                    clean_line = re.sub(r'^[a-zа-яәөүұғқңһіё\s\d.!,;]+', '', clean_line).strip()
+                    # Проверяем, что это только заглавные буквы
+                    if not clean_line or not re.match(r'^[A-ZА-ЯӘӨҮҰҒҚҢҺІЁ\s]+$', clean_line):
+                        continue
+                    # Считаем латинские буквы
+                    latin_count = sum(1 for c in clean_line if c.isupper() and ord('A') <= ord(c) <= ord('Z'))
+                    if best_name is None:
+                        best_name = clean_line
+                    elif latin_count > sum(1 for c in best_name if c.isupper() and ord('A') <= ord(c) <= ord('Z')):
+                        best_name = clean_line  # Это латиница - лучше
+
+                if best_name:
+                    data.first_name = best_name
+                    raw_first_name = best_name
+                    if self.debug:
+                        print(f"✅ Имя: {data.first_name}")
+                    break
                 if data.first_name:
                     break
+
+        # ВАЖНО: Проверяем, не попали ли оба имени в одно поле
+        if data.last_name and not data.first_name:
+            # Если в фамилии несколько слов, возможно там и имя тоже
+            if len(data.last_name.split()) > 1:
+                if self.debug:
+                    print(f"⚠️ Обнаружено несколько слов в фамилии: {data.last_name}")
+                # Применяем умное разделение
+                split_last, split_first = self._smart_name_split(data.last_name)
+                if split_first:  # Если удалось разделить
+                    data.last_name = split_last
+                    data.first_name = split_first
+                    if self.debug:
+                        print(f"✅ После разделения - Фамилия: {data.last_name}, Имя: {data.first_name}")
+
+        elif data.first_name and not data.last_name:
+            # Если имя есть, а фамилии нет - возможно все в имени
+            if len(data.first_name.split()) > 1:
+                if self.debug:
+                    print(f"⚠️ Обнаружено несколько слов в имени: {data.first_name}")
+                split_last, split_first = self._smart_name_split(data.first_name)
+                data.last_name = split_last
+                data.first_name = split_first
+                if self.debug:
+                    print(f"✅ После разделения - Фамилия: {data.last_name}, Имя: {data.first_name}")
 
         # 5. ДАТЫ
         # Дата рождения
@@ -336,16 +536,53 @@ class PassportParser:
                     print(f"✅ Срок действия: {data.expiration_date}")
                 break
 
-        # 6. MRZ OVERRIDE (самый точный источник имен)
+        # 6. MRZ OVERRIDE (самый точный источник имен, но с валидацией)
         mrz_data = self.parse_mrz(text)
+
+        # Проверяем, стоит ли доверять MRZ данным
+        use_mrz = False
         if mrz_data.get("last_name"):
-            data.last_name = mrz_data["last_name"]
-            if self.debug:
-                print(f"✅ Фамилия (MRZ override): {data.last_name}")
-        if mrz_data.get("first_name"):
-            data.first_name = mrz_data["first_name"]
-            if self.debug:
-                print(f"✅ Имя (MRZ override): {data.first_name}")
+            mrz_last = mrz_data["last_name"]
+            mrz_first = mrz_data.get("first_name", "")
+
+            # Проверяем качество MRZ: должны быть латинские буквы
+            mrz_last_latin = sum(1 for c in mrz_last if c.isalpha() and ord('A') <= ord(c.upper()) <= ord('Z'))
+            mrz_last_cyrillic = sum(1 for c in mrz_last if c.isalpha() and not (ord('A') <= ord(c.upper()) <= ord('Z')))
+
+            # Если в MRZ больше кириллицы, чем латиницы - это ошибка OCR
+            if mrz_last_cyrillic > mrz_last_latin:
+                if self.debug:
+                    print(f"⚠️ MRZ содержит кириллицу вместо латиницы: {mrz_last}")
+                    print(f"   Латиница: {mrz_last_latin}, Кириллица: {mrz_last_cyrillic}")
+                    print(f"   Пропускаем MRZ, используем текстовые поля")
+            else:
+                # MRZ выглядит нормально - используем
+                use_mrz = True
+
+                # Проверяем, не попали ли оба имени в одно поле
+                if mrz_last and not mrz_first and len(mrz_last.split()) > 1:
+                    if self.debug:
+                        print(f"⚠️ MRZ: Несколько слов в фамилии: {mrz_last}")
+                    split_last, split_first = self._smart_name_split(mrz_last)
+                    data.last_name = split_last
+                    data.first_name = split_first
+                    if self.debug:
+                        print(f"✅ MRZ после разделения - Фамилия: {data.last_name}, Имя: {data.first_name}")
+                else:
+                    data.last_name = mrz_last
+                    if mrz_first:
+                        data.first_name = mrz_first
+                    if self.debug:
+                        print(f"✅ Фамилия (MRZ override): {data.last_name}")
+                        if mrz_first:
+                            print(f"✅ Имя (MRZ override): {data.first_name}")
+
+        # Если MRZ не используется, убеждаемся что есть латинские имена из текста
+        if not use_mrz and self.debug:
+            print(f"ℹ️ Используем текстовые поля вместо MRZ")
+            print(f"   Фамилия: {data.last_name}")
+            print(f"   Имя: {data.first_name}")
+
         if mrz_data.get("document_number") and not data.document_number:
             data.document_number = mrz_data["document_number"]
             if self.debug:

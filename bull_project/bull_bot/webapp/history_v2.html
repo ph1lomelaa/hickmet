@@ -1055,7 +1055,7 @@
     function startReschedule(bookingId) {
         const booking = allBookings.find(b => b.id === bookingId);
         if (!booking) return;
-        
+
         const pilgrimData = {
             first_name: booking.guest_first_name,
             last_name: booking.guest_last_name,
@@ -1066,11 +1066,13 @@
             passport_expiry: booking.passport_expiry,
             iin: booking.guest_iin
         };
-        
+
         localStorage.setItem('reschedule_booking_id', booking.id);
         localStorage.setItem('reschedule_data', JSON.stringify(pilgrimData));
-        
-        window.location.href = 'booking_form_v2.html';
+        localStorage.setItem('is_reschedule', 'true');
+
+        // Используем существующую форму бронирования
+        window.location.href = 'index.html';
     }
 
     function rescheduleBooking() {
