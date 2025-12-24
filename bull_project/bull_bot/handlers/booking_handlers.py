@@ -168,6 +168,12 @@ async def process_passport(message: Message, state: FSMContext):
         p_data = passport_result.to_dict()
         p_data['passport_image_path'] = path  # временно локальный путь
 
+        # Если есть латиница из MRZ, перепишем имена для фронта
+        if passport_result.to_dict().get("MRZ_LAST"):
+            p_data["Last Name"] = passport_result.to_dict().get("MRZ_LAST") or p_data.get("Last Name")
+        if passport_result.to_dict().get("MRZ_FIRST"):
+            p_data["First Name"] = passport_result.to_dict().get("MRZ_FIRST") or p_data.get("First Name")
+
         # 🔥 КРИТИЧНО: Добавляем snake_case поля для writer.py
         p_data['last_name'] = p_data.get('Last Name', '-')
         p_data['first_name'] = p_data.get('First Name', '-')

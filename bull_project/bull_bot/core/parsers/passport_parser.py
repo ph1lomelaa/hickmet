@@ -50,6 +50,8 @@ class PassportData:
             "Document Number": self.document_number or "-",
             "Document Expiration": self.expiration_date or "-",
             "IIN": self.iin or "-",
+            "MRZ_LAST": getattr(self, "mrz_last_name", None),
+            "MRZ_FIRST": getattr(self, "mrz_first_name", None),
         }
 
 class PassportParser:
@@ -57,6 +59,20 @@ class PassportParser:
         self.poppler_path = poppler_path
         self.debug = debug
         self._date_cleaner = re.compile(r"\s+")
+        self._cyr_map = {
+            "А": "A", "Б": "B", "В": "V", "Г": "G", "Д": "D", "Е": "E", "Ё": "E",
+            "Ж": "ZH", "З": "Z", "И": "I", "Й": "Y", "К": "K", "Л": "L", "М": "M",
+            "Н": "N", "О": "O", "П": "P", "Р": "R", "С": "S", "Т": "T", "У": "U",
+            "Ф": "F", "Х": "KH", "Ц": "TS", "Ч": "CH", "Ш": "SH", "Щ": "SCH",
+            "Ъ": "", "Ы": "Y", "Ь": "", "Э": "E", "Ю": "YU", "Я": "YA",
+            "Қ": "K", "Ә": "A", "Ң": "N", "Ғ": "G", "Ү": "U", "Ұ": "U", "Ө": "O", "Һ": "H",
+            "а": "A", "б": "B", "в": "V", "г": "G", "д": "D", "е": "E", "ё": "E",
+            "ж": "ZH", "з": "Z", "и": "I", "й": "Y", "к": "K", "л": "L", "м": "M",
+            "н": "N", "о": "O", "п": "P", "р": "R", "с": "S", "т": "T", "у": "U",
+            "ф": "F", "х": "KH", "ц": "TS", "ч": "CH", "ш": "SH", "щ": "SCH",
+            "ъ": "", "ы": "Y", "ь": "", "э": "E", "ю": "YU", "я": "YA",
+            "қ": "K", "ә": "A", "ң": "N", "ғ": "G", "ү": "U", "ұ": "U", "ө": "O", "һ": "H",
+        }
 
     def _clean_date(self, value: str) -> str:
         """Удаляет лишние пробелы и нормализует разделители."""
@@ -67,6 +83,14 @@ class PassportParser:
         if len(stripped) == 8 and stripped.isdigit():
             return f"{stripped[0:2]}.{stripped[2:4]}.{stripped[4:]}"
         return stripped
+
+    def _contains_cyrillic(self, value: str) -> bool:
+        return any("А" <= c <= "я" or c in "ЁёҚқӘәҢңҒғҮүҰұӨөҺһ" for c in value or "")
+
+    def _transliterate(self, value: str) -> str:
+        if not value:
+            return ""
+        return "".join(self._cyr_map.get(ch, ch) for ch in value)
 
     def preprocess_image(self, image: Image.Image) -> np.ndarray:
         """Улучшение качества изображения"""
@@ -479,6 +503,24 @@ class PassportParser:
                 if data.first_name:
                     break
 
+        # Эвристика: попробовать взять латинские строки после ключевых заголовков
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        def pick_after(keyword: str):
+            for idx, ln in enumerate(lines):
+                if keyword in ln.upper():
+                    for nxt in lines[idx+1:idx+4]:
+                        cand = re.sub(r'[^A-Za-z]', '', nxt)
+                        if cand and cand.isalpha() and not self._contains_cyrillic(nxt):
+                            return cand
+            return None
+
+        surname_candidate = pick_after("SURNAME")
+        if surname_candidate:
+            data.last_name = surname_candidate
+        name_candidate = pick_after("GIVEN")
+        if name_candidate:
+            data.first_name = name_candidate
+
         # ВАЖНО: Проверяем, не попали ли оба имени в одно поле
         if data.last_name and not data.first_name:
             # Если в фамилии несколько слов, возможно там и имя тоже
@@ -558,6 +600,9 @@ class PassportParser:
             else:
                 # MRZ выглядит нормально - используем
                 use_mrz = True
+                # Сохраняем для словаря (чтобы фронт брал латиницу)
+                self.mrz_last_name = mrz_last
+                self.mrz_first_name = mrz_first
 
                 # Проверяем, не попали ли оба имени в одно поле
                 if mrz_last and not mrz_first and len(mrz_last.split()) > 1:
@@ -582,6 +627,13 @@ class PassportParser:
             print(f"ℹ️ Используем текстовые поля вместо MRZ")
             print(f"   Фамилия: {data.last_name}")
             print(f"   Имя: {data.first_name}")
+
+        # Если MRZ не подошёл, но текстовые поля на кириллице — транслитерируем
+        if not use_mrz:
+            if self._contains_cyrillic(data.last_name):
+                data.last_name = self._transliterate(data.last_name)
+            if self._contains_cyrillic(data.first_name):
+                data.first_name = self._transliterate(data.first_name)
 
         if mrz_data.get("document_number") and not data.document_number:
             data.document_number = mrz_data["document_number"]
