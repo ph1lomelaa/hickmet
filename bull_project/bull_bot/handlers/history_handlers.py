@@ -66,6 +66,15 @@ async def start_reschedule(call: CallbackQuery, state: FSMContext):
         comment=b.comment
     )
 
+    # ДЕБАГ: Проверяем что данные сохранились
+    data_check = await state.get_data()
+    print(f"\n✅ ПЕРЕНОС ИНИЦИАЛИЗИРОВАН:")
+    print(f"   Booking ID: {booking_id}")
+    print(f"   Паломник: {b.guest_last_name} {b.guest_first_name}")
+    print(f"   pilgrims_list установлен: {len(data_check.get('pilgrims_list', []))}")
+    print(f"   reschedule_passport установлен: {bool(data_check.get('reschedule_passport'))}")
+    print(f"   is_reschedule: {data_check.get('is_reschedule', False)}")
+
     # Выбор новой таблицы
     tables = get_accessible_tables()
     await call.message.answer(

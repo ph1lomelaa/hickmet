@@ -272,6 +272,12 @@ async def send_webapp_link(message: Message, state: FSMContext):
     data = await state.get_data()
     pilgrims = data.get('pilgrims_list', [])
 
+    # 🔥 ИСПРАВЛЕНИЕ: Если это перенос и список пуст, восстанавливаем из reschedule_passport
+    if (not pilgrims) and data.get("is_reschedule") and data.get("reschedule_passport"):
+        pilgrims = [data.get("reschedule_passport")]
+        await state.update_data(pilgrims_list=pilgrims, total_pilgrims=len(pilgrims))
+        print(f"✅ Восстановлен паломник для переноса: {pilgrims[0].get('Last Name', '?')}")
+
     # ДЕБАГ: Логирование для переноса
     print(f"\n{'='*60}")
     print(f"📤 ОТПРАВКА В WEBAPP (send_webapp_link)")
@@ -613,7 +619,20 @@ from bull_project.bull_bot.config.keyboards import kb_select_sheet, kb_select_pa
 async def booking_sel_table(call: CallbackQuery, state: FSMContext):
     """Обработчик выбора таблицы при переносе"""
     sid = call.data.split(":")[1]
+
+    # ДЕБАГ: Проверяем состояние ПЕРЕД обновлением
+    data_before = await state.get_data()
+    print(f"🔍 booking_sel_table - ПЕРЕД обновлением:")
+    print(f"   pilgrims_list: {len(data_before.get('pilgrims_list', []))}")
+    print(f"   is_reschedule: {data_before.get('is_reschedule', False)}")
+
     await state.update_data(current_sheet_id=sid)
+
+    # ДЕБАГ: Проверяем состояние ПОСЛЕ обновления
+    data_after = await state.get_data()
+    print(f"🔍 booking_sel_table - ПОСЛЕ обновления:")
+    print(f"   pilgrims_list: {len(data_after.get('pilgrims_list', []))}")
+
     sheets = get_sheet_names(sid)
 
     await call.message.edit_text(
@@ -648,6 +667,13 @@ async def booking_sel_pkg(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     row_id = int(call.data.split(":")[1])
     pkg_name = data['packages_map'].get(row_id, "Unknown")
+
+    # ДЕБАГ: Проверяем состояние
+    print(f"\n🔍 booking_sel_pkg - Состояние:")
+    print(f"   is_reschedule: {data.get('is_reschedule', False)}")
+    print(f"   pilgrims_list: {len(data.get('pilgrims_list', []))}")
+    print(f"   reschedule_passport: {bool(data.get('reschedule_passport'))}")
+    print(f"   old_booking_id: {data.get('old_booking_id', 'НЕТ')}")
 
     await state.update_data(selected_pkg_name=pkg_name)
 
