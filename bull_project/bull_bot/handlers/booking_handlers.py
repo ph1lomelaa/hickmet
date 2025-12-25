@@ -161,7 +161,8 @@ async def process_passport(message: Message, state: FSMContext):
     msg = await message.answer("⏳ Читаю данные...")
 
     try:
-        parser = PassportParser(POPPLER_PATH)
+        # Включаем сохранение OCR текста и debug для первых 3 паспортов
+        parser = PassportParser(POPPLER_PATH, debug=(curr <= 3), save_ocr=True)
         passport_result = parser.parse(path)  # Возвращает PassportData объект
 
         # 🔥 ИСПРАВЛЕНИЕ: Используем to_dict() для получения всех полей
@@ -171,8 +172,10 @@ async def process_passport(message: Message, state: FSMContext):
         # Если есть латиница из MRZ, перепишем имена для фронта
         if passport_result.to_dict().get("MRZ_LAST"):
             p_data["Last Name"] = passport_result.to_dict().get("MRZ_LAST") or p_data.get("Last Name")
+            print(f"📋 Используем MRZ фамилию: {p_data['Last Name']}")
         if passport_result.to_dict().get("MRZ_FIRST"):
             p_data["First Name"] = passport_result.to_dict().get("MRZ_FIRST") or p_data.get("First Name")
+            print(f"📋 Используем MRZ имя: {p_data['First Name']}")
 
         # 🔥 КРИТИЧНО: Добавляем snake_case поля для writer.py
         p_data['last_name'] = p_data.get('Last Name', '-')
@@ -184,13 +187,18 @@ async def process_passport(message: Message, state: FSMContext):
         p_data['iin'] = p_data.get('IIN', '-')
 
         # Логирование для проверки
-        print(f"📋 PARSED DATA для паломника {curr}:")
-        print(f"  Last Name: {p_data.get('Last Name')}")
-        print(f"  First Name: {p_data.get('First Name')}")
-        print(f"  Gender: {p_data.get('Gender')}")
-        print(f"  DOB: {p_data.get('Date of Birth')}")
-        print(f"  Document Number: {p_data.get('Document Number')}")
-        print(f"  IIN: {p_data.get('IIN')}")
+        print(f"\n{'='*60}")
+        print(f"📋 ИТОГОВЫЕ ДАННЫЕ ПАСПОРТА (паломник {curr}):")
+        print(f"{'='*60}")
+        print(f"  👤 Фамилия (Last Name):      {p_data.get('Last Name', 'НЕТ')}")
+        print(f"  👤 Имя (First Name):         {p_data.get('First Name', 'НЕТ')}")
+        print(f"  👥 Пол (Gender):             {p_data.get('Gender', 'НЕТ')}")
+        print(f"  🎂 Дата рождения (DOB):      {p_data.get('Date of Birth', 'НЕТ')}")
+        print(f"  📄 Номер паспорта:           {p_data.get('Document Number', 'НЕТ')}")
+        print(f"  🆔 ИИН:                      {p_data.get('IIN', 'НЕТ')}")
+        print(f"  📅 Срок действия:            {p_data.get('Document Expiration', 'НЕТ')}")
+        print(f"  📸 Путь к файлу:             {path}")
+        print(f"{'='*60}\n")
 
         # Загружаем файл на API, если указан API_BASE_URL
         if API_BASE_URL:
