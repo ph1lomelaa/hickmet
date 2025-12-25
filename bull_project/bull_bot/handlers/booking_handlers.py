@@ -140,7 +140,7 @@ async def process_passport(message: Message, state: FSMContext):
         if temp_path.lower().endswith('.pdf'):
             # Конвертируем PDF в PNG
             print(f"🔄 Конвертация PDF в PNG...")
-            pages = convert_from_path(temp_path, dpi=200, poppler_path=POPPLER_PATH)
+            pages = convert_from_path(temp_path, dpi=300, poppler_path=POPPLER_PATH)
             if pages:
                 pages[0].save(png_path, 'PNG')
                 print(f"✅ PDF сконвертирован в PNG: {png_path}")
