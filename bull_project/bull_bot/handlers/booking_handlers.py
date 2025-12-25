@@ -37,6 +37,11 @@ class BookingFlow(StatesGroup):
     waiting_access_code = State()
     waiting_registration_name = State()
 
+    # Выбор таблицы/даты/пакета (для переноса и создания брони)
+    choosing_table = State()
+    choosing_date = State()
+    choosing_pkg = State()
+
     # Сбор паломников
     waiting_count = State()
     waiting_passport = State()
@@ -265,7 +270,25 @@ async def next_step_pilgrim(message: Message, state: FSMContext, p_data):
 
 async def send_webapp_link(message: Message, state: FSMContext):
     data = await state.get_data()
-    pilgrims = data['pilgrims_list']
+    pilgrims = data.get('pilgrims_list', [])
+
+    # ДЕБАГ: Логирование для переноса
+    print(f"\n{'='*60}")
+    print(f"📤 ОТПРАВКА В WEBAPP (send_webapp_link)")
+    print(f"{'='*60}")
+    print(f"  is_reschedule: {data.get('is_reschedule', False)}")
+    print(f"  old_booking_id: {data.get('old_booking_id', 'НЕТ')}")
+    print(f"  Количество паломников: {len(pilgrims)}")
+    print(f"  pilgrims_list present: {bool(pilgrims)}")
+    if pilgrims:
+        for i, p in enumerate(pilgrims):
+            print(f"  Паломник {i+1}: {p.get('Last Name', '?')} {p.get('First Name', '?')}")
+    print(f"{'='*60}\n")
+
+    if not pilgrims:
+        await message.answer("❌ Ошибка: список паломников пуст. Начните бронирование заново.")
+        await state.clear()
+        return
 
     # 🔥 ИСПРАВЛЕНИЕ: Передаем ПОЛНЫЕ данные паспорта включая путь к фото
     p_full_data = []
@@ -579,6 +602,74 @@ async def catch_all_messages(message: Message):
     web_data = getattr(message, 'web_app_data', None)
     if web_data:
         print(f"  Есть web_app_data! {web_data.data}")
+
+# ==================== 5. ОБРАБОТЧИКИ ВЫБОРА ТАБЛИЦЫ/ПАКЕТА ====================
+# Добавляем обработчики для переноса брони
+
+from bull_project.bull_bot.core.google_sheets.client import get_sheet_names, get_packages_from_sheet
+from bull_project.bull_bot.config.keyboards import kb_select_sheet, kb_select_package
+
+@router.callback_query(BookingFlow.choosing_table, F.data.startswith("sel_tab:"))
+async def booking_sel_table(call: CallbackQuery, state: FSMContext):
+    """Обработчик выбора таблицы при переносе"""
+    sid = call.data.split(":")[1]
+    await state.update_data(current_sheet_id=sid)
+    sheets = get_sheet_names(sid)
+
+    await call.message.edit_text(
+        "✈️ <b>Выберите дату вылета:</b>",
+        reply_markup=kb_select_sheet(sheets[:15], len(sheets) > 15),
+        parse_mode="HTML"
+    )
+    await state.set_state(BookingFlow.choosing_date)
+    await call.answer()
+
+@router.callback_query(BookingFlow.choosing_date, F.data.startswith("sel_date:"))
+async def booking_sel_date(call: CallbackQuery, state: FSMContext):
+    """Обработчик выбора даты при переносе"""
+    sname = call.data.split(":")[1]
+    await state.update_data(current_sheet_name=sname)
+    data = await state.get_data()
+
+    pkgs = get_packages_from_sheet(data['current_sheet_id'], sname)
+    await state.update_data(packages_map=pkgs)
+
+    await call.message.edit_text(
+        "📦 <b>Выберите пакет:</b>",
+        reply_markup=kb_select_package(pkgs),
+        parse_mode="HTML"
+    )
+    await state.set_state(BookingFlow.choosing_pkg)
+    await call.answer()
+
+@router.callback_query(BookingFlow.choosing_pkg, F.data.startswith("sel_pkg:"))
+async def booking_sel_pkg(call: CallbackQuery, state: FSMContext):
+    """Обработчик выбора пакета при переносе"""
+    data = await state.get_data()
+    row_id = int(call.data.split(":")[1])
+    pkg_name = data['packages_map'].get(row_id, "Unknown")
+
+    await state.update_data(selected_pkg_name=pkg_name)
+
+    # ВАЖНО: Проверяем что это перенос
+    is_reschedule = data.get('is_reschedule', False)
+
+    if is_reschedule:
+        # Для переноса - сразу отправляем в веб-форму
+        await call.message.edit_text(
+            f"✅ Выбрано:\n"
+            f"📦 Пакет: {pkg_name}\n"
+            f"📅 Дата: {data['current_sheet_name']}\n\n"
+            f"Открываю форму для заполнения...",
+            parse_mode="HTML"
+        )
+        await send_webapp_link(call.message, state)
+    else:
+        # Обычное бронирование - идем дальше
+        await call.message.answer("Сколько паломников? (Число):", parse_mode="HTML")
+        await state.set_state(BookingFlow.waiting_count)
+
+    await call.answer()
 
 # Добавьте в booking_handlers.py
 @router.message(Command("test_form"))
