@@ -55,9 +55,10 @@ class PassportData:
         }
 
 class PassportParser:
-    def __init__(self, poppler_path: str = None, debug: bool = False):
+    def __init__(self, poppler_path: str = None, debug: bool = False, save_ocr: bool = False):
         self.poppler_path = poppler_path
         self.debug = debug
+        self.save_ocr = save_ocr  # Новая опция для сохранения OCR текста
         self._date_cleaner = re.compile(r"\s+")
         self._cyr_map = {
             "А": "A", "Б": "B", "В": "V", "Г": "G", "Д": "D", "Е": "E", "Ё": "E",
@@ -127,6 +128,13 @@ class PassportParser:
                 lang="kaz+rus+eng",
                 config='--psm 6'  # Assume uniform block of text
             )
+
+            # Всегда сохраняем OCR текст в файл для отладки
+            if self.save_ocr or self.debug:
+                ocr_file = file_path + ".ocr_text.txt"
+                with open(ocr_file, "w", encoding="utf-8") as f:
+                    f.write(text)
+                print(f"💾 OCR текст сохранен: {ocr_file}")
 
             if self.debug:
                 print("📄 OCR TEXT START" + "="*40)
@@ -295,24 +303,52 @@ class PassportParser:
         mrz_lines = [re.sub(r'[^A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9<]', '', line, flags=re.IGNORECASE) for line in raw_lines if len(re.sub(r'[^A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9<]', '', line, flags=re.IGNORECASE)) >= 25]
 
         if len(mrz_lines) < 2:
-            # Ищем паттерн с двойными шевронами
-            match = re.search(r'([A-Z]{2,})<<([A-Z]{2,})', text)
-            if match:
-                mrz_data["last_name"] = match.group(1).replace("<", "")
-                mrz_data["first_name"] = match.group(2).replace("<", "")
-                return mrz_data
+            # Ищем паттерн с шевронами (OCR может видеть << как < <, \< < и т.д.)
+            patterns = [
+                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{3,})\s*<<\s*([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{3,})',  # стандартный <<
+                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{3,})\s*<\s*<\s*([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{3,})',  # < <
+                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{3,})\\<\s*<\s*([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{3,})',  # \< <
+                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{3,})<\s+<\s*([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{3,})',  # < <
+            ]
 
-            # Ищем паттерн с одинарными шевронами или пробелами
-            match = re.search(r'([A-Z]{2,})\s+([A-Z]{2,})', text)
-            if match:
-                mrz_data["last_name"] = match.group(1)
-                mrz_data["first_name"] = match.group(2)
+            for pattern in patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    last_name = match.group(1).replace("<", "").replace("\\", "").strip()
+                    first_name = match.group(2).replace("<", "").replace("\\", "").strip()
+
+                    if self.debug:
+                        print(f"  📍 Найден MRZ паттерн:")
+                        print(f"     Исходная фамилия: '{last_name}'")
+                        print(f"     Исходное имя:     '{first_name}'")
+
+                    # Транслитерируем если кириллица
+                    if self._contains_cyrillic(last_name):
+                        if self.debug:
+                            print(f"     ⚠️  Фамилия на кириллице, транслитерируем...")
+                        last_name = self._transliterate(last_name)
+                        if self.debug:
+                            print(f"     ✅ После транслитерации: '{last_name}'")
+
+                    if self._contains_cyrillic(first_name):
+                        if self.debug:
+                            print(f"     ⚠️  Имя на кириллице, транслитерируем...")
+                        first_name = self._transliterate(first_name)
+                        if self.debug:
+                            print(f"     ✅ После транслитерации: '{first_name}'")
+
+                    mrz_data["last_name"] = last_name
+                    mrz_data["first_name"] = first_name
+                    if self.debug:
+                        print(f"✅ MRZ (pattern): {mrz_data['last_name']} {mrz_data.get('first_name', '')}")
+                    return mrz_data
+
             return mrz_data
 
         line1, line2 = mrz_lines[-2], mrz_lines[-1]
         if self.debug:
-            print(f"✅ MRZ строка 1: {line1}")
-            print(f"✅ MRZ строка 2: {line2}")
+            print(f"✅ MRZ строка 1 (raw): {line1}")
+            print(f"✅ MRZ строка 2 (raw): {line2}")
 
         # Обрабатываем стандартный формат MRZ
         if line1.startswith("P<"):
@@ -329,17 +365,38 @@ class PassportParser:
         # Разделяем по двойным шевронам
         name_part = name_field.split("<<", 1)
         if name_part:
-            mrz_data["last_name"] = name_part[0].replace("<", "")
+            last_name_raw = name_part[0].replace("<", "")
+            # Транслитерируем если кириллица
+            if self._contains_cyrillic(last_name_raw):
+                if self.debug:
+                    print(f"⚠️ MRZ фамилия на кириллице: {last_name_raw}")
+                last_name_raw = self._transliterate(last_name_raw)
+                if self.debug:
+                    print(f"✅ После транслитерации: {last_name_raw}")
+            mrz_data["last_name"] = last_name_raw
+
             if len(name_part) > 1:
                 # Убираем одинарные шевроны и лишние пробелы
                 first_name_raw = name_part[1].replace("<", " ").strip()
+                if self._contains_cyrillic(first_name_raw):
+                    if self.debug:
+                        print(f"⚠️ MRZ имя на кириллице: {first_name_raw}")
+                    first_name_raw = self._transliterate(first_name_raw)
+                    if self.debug:
+                        print(f"✅ После транслитерации: {first_name_raw}")
                 mrz_data["first_name"] = first_name_raw
             elif not mrz_data.get("first_name"):
                 # Если нет двойных шевронов, пробуем разделить по одинарным
                 name_parts = name_field.replace("<", " ").split()
                 if len(name_parts) > 1:
-                    mrz_data["last_name"] = name_parts[0]
-                    mrz_data["first_name"] = " ".join(name_parts[1:])
+                    last_name_raw = name_parts[0]
+                    first_name_raw = " ".join(name_parts[1:])
+                    if self._contains_cyrillic(last_name_raw):
+                        last_name_raw = self._transliterate(last_name_raw)
+                    if self._contains_cyrillic(first_name_raw):
+                        first_name_raw = self._transliterate(first_name_raw)
+                    mrz_data["last_name"] = last_name_raw
+                    mrz_data["first_name"] = first_name_raw
 
         if len(line2) >= 9:
             mrz_doc = line2[0:9].replace("<", "")
@@ -465,61 +522,44 @@ class PassportParser:
 
         # Имя
         name_patterns = [
-            r'(?:АТЫ|Given\s*names?|First\s*Names?)[\s:]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁA-Z\s]+)',
-            # Более гибкий паттерн - ищем GIVEN NAMES даже если перед ним мусор
-            r'GIVEN\s*NAMES?[\s:]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁA-Z\s]+)',
-            # Ищем АТЫ + пропускаем всю строку с мусором + захватываем имя на следующей строке
-            r'АТЫ[^\n]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ\s]+)',
+            r'(?:АТЫ|Given\s*names?|First\s*Names?)[\s:]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ\s\n]+)',
+            r'GIVEN\s*NAMES?[\s:]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ\s\n]+)',
+            r'АТЫ[^\n]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ\s\n]+)',
         ]
 
-        raw_first_name = ""
         for pattern in name_patterns:
             name_match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
             if name_match:
                 name_text = name_match.group(1).strip()
-                # Парсим все строки и выбираем латиницу если есть
-                lines = name_text.split('\n')
-                best_name = None
-                for line in lines:
-                    clean_line = line.strip()
-                    # Убираем маленькие буквы в начале (мусор OCR)
-                    clean_line = re.sub(r'^[a-zа-яәөүұғқңһіё\s\d.!,;]+', '', clean_line).strip()
-                    # Проверяем, что это только заглавные буквы
-                    if not clean_line or not re.match(r'^[A-ZА-ЯӘӨҮҰҒҚҢҺІЁ\s]+$', clean_line):
-                        continue
-                    # Считаем латинские буквы
-                    latin_count = sum(1 for c in clean_line if c.isupper() and ord('A') <= ord(c) <= ord('Z'))
-                    if best_name is None:
-                        best_name = clean_line
-                    elif latin_count > sum(1 for c in best_name if c.isupper() and ord('A') <= ord(c) <= ord('Z')):
-                        best_name = clean_line  # Это латиница - лучше
+                lines = [ln.strip() for ln in name_text.split('\n') if ln.strip()]
+                if lines:
+                    best_line = max(lines, key=lambda l: sum(1 for c in l if 'A' <= c.upper() <= 'Z'))
+                    # Фильтр: выкинуть служебные слова
+                    cleaned = re.sub(r'[^A-Za-z]', '', best_line)
+                    if cleaned and len(cleaned) > 2 and "PASSPORT" not in cleaned.upper():
+                        data.first_name = cleaned
+                        if self.debug:
+                            print(f"✅ Найдено имя: {data.first_name}")
+                        break
 
-                if best_name:
-                    data.first_name = best_name
-                    raw_first_name = best_name
-                    if self.debug:
-                        print(f"✅ Имя: {data.first_name}")
-                    break
-                if data.first_name:
-                    break
-
-        # Эвристика: попробовать взять латинские строки после ключевых заголовков
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        def pick_after(keyword: str):
-            for idx, ln in enumerate(lines):
-                if keyword in ln.upper():
-                    for nxt in lines[idx+1:idx+4]:
-                        cand = re.sub(r'[^A-Za-z]', '', nxt)
-                        if cand and cand.isalpha() and not self._contains_cyrillic(nxt):
-                            return cand
-            return None
-
-        surname_candidate = pick_after("SURNAME")
-        if surname_candidate:
-            data.last_name = surname_candidate
-        name_candidate = pick_after("GIVEN")
-        if name_candidate:
-            data.first_name = name_candidate
+        # Доп. эвристика: если имя все ещё пустое, берем латиницу из текста без служебных слов
+        if not data.first_name:
+            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            latin_lines = []
+            for ln in lines:
+                cleaned = re.sub(r'[^A-Za-z]', '', ln)
+                if not cleaned or len(cleaned) < 2 or len(cleaned) > 30:
+                    continue
+                up = cleaned.upper()
+                if any(x in up for x in ["PASSPORT", "KAZ", "NATIONALITY", "MINISTRY"]):
+                    continue
+                if up == (data.last_name or "").upper():
+                    continue
+                latin_lines.append(cleaned)
+            if latin_lines:
+                data.first_name = latin_lines[0]
+                if self.debug:
+                    print(f"✅ Имя по латинице из текста: {data.first_name}")
 
         # ВАЖНО: Проверяем, не попали ли оба имени в одно поле
         if data.last_name and not data.first_name:
@@ -578,31 +618,22 @@ class PassportParser:
                     print(f"✅ Срок действия: {data.expiration_date}")
                 break
 
-        # 6. MRZ OVERRIDE (самый точный источник имен, но с валидацией)
+        # 6. MRZ OVERRIDE (самый точный источник имен после транслитерации)
         mrz_data = self.parse_mrz(text)
 
-        # Проверяем, стоит ли доверять MRZ данным
+        # Используем MRZ если он не пустой (теперь там всегда латиница после транслитерации)
         use_mrz = False
         if mrz_data.get("last_name"):
             mrz_last = mrz_data["last_name"]
             mrz_first = mrz_data.get("first_name", "")
 
-            # Проверяем качество MRZ: должны быть латинские буквы
-            mrz_last_latin = sum(1 for c in mrz_last if c.isalpha() and ord('A') <= ord(c.upper()) <= ord('Z'))
-            mrz_last_cyrillic = sum(1 for c in mrz_last if c.isalpha() and not (ord('A') <= ord(c.upper()) <= ord('Z')))
+            # Сохраняем для словаря (чтобы фронт брал латиницу)
+            self.mrz_last_name = mrz_last
+            self.mrz_first_name = mrz_first
 
-            # Если в MRZ больше кириллицы, чем латиницы - это ошибка OCR
-            if mrz_last_cyrillic > mrz_last_latin:
-                if self.debug:
-                    print(f"⚠️ MRZ содержит кириллицу вместо латиницы: {mrz_last}")
-                    print(f"   Латиница: {mrz_last_latin}, Кириллица: {mrz_last_cyrillic}")
-                    print(f"   Пропускаем MRZ, используем текстовые поля")
-            else:
-                # MRZ выглядит нормально - используем
+            # Проверяем качество MRZ: есть ли в нем хотя бы 2 буквы
+            if len(mrz_last) >= 2 and mrz_last.replace(" ", "").isalpha():
                 use_mrz = True
-                # Сохраняем для словаря (чтобы фронт брал латиницу)
-                self.mrz_last_name = mrz_last
-                self.mrz_first_name = mrz_first
 
                 # Проверяем, не попали ли оба имени в одно поле
                 if mrz_last and not mrz_first and len(mrz_last.split()) > 1:
@@ -614,26 +645,36 @@ class PassportParser:
                     if self.debug:
                         print(f"✅ MRZ после разделения - Фамилия: {data.last_name}, Имя: {data.first_name}")
                 else:
-                    data.last_name = mrz_last
-                    if mrz_first:
+                    # Используем MRZ только если текстовые поля хуже или пусты
+                    # Приоритет: латиница из текста > MRZ > кириллица из текста
+                    text_last_has_latin = data.last_name and not self._contains_cyrillic(data.last_name)
+                    text_first_has_latin = data.first_name and not self._contains_cyrillic(data.first_name)
+
+                    if not text_last_has_latin or not data.last_name:
+                        data.last_name = mrz_last
+                        if self.debug:
+                            print(f"✅ Фамилия (MRZ): {data.last_name}")
+
+                    if mrz_first and (not text_first_has_latin or not data.first_name):
                         data.first_name = mrz_first
-                    if self.debug:
-                        print(f"✅ Фамилия (MRZ override): {data.last_name}")
-                        if mrz_first:
-                            print(f"✅ Имя (MRZ override): {data.first_name}")
+                        if self.debug:
+                            print(f"✅ Имя (MRZ): {data.first_name}")
+            else:
+                if self.debug:
+                    print(f"⚠️ MRZ фамилия некачественная: '{mrz_last}'")
 
-        # Если MRZ не используется, убеждаемся что есть латинские имена из текста
-        if not use_mrz and self.debug:
-            print(f"ℹ️ Используем текстовые поля вместо MRZ")
-            print(f"   Фамилия: {data.last_name}")
-            print(f"   Имя: {data.first_name}")
+        # Если текстовые поля всё ещё на кириллице — транслитерируем
+        if self._contains_cyrillic(data.last_name):
+            old_last = data.last_name
+            data.last_name = self._transliterate(data.last_name)
+            if self.debug:
+                print(f"🔄 Транслитерация фамилии: {old_last} → {data.last_name}")
 
-        # Если MRZ не подошёл, но текстовые поля на кириллице — транслитерируем
-        if not use_mrz:
-            if self._contains_cyrillic(data.last_name):
-                data.last_name = self._transliterate(data.last_name)
-            if self._contains_cyrillic(data.first_name):
-                data.first_name = self._transliterate(data.first_name)
+        if self._contains_cyrillic(data.first_name):
+            old_first = data.first_name
+            data.first_name = self._transliterate(data.first_name)
+            if self.debug:
+                print(f"🔄 Транслитерация имени: {old_first} → {data.first_name}")
 
         if mrz_data.get("document_number") and not data.document_number:
             data.document_number = mrz_data["document_number"]
