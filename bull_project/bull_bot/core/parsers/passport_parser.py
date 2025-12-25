@@ -60,13 +60,14 @@ class PassportParser:
         self.debug = debug
         self.save_ocr = save_ocr  # Новая опция для сохранения OCR текста
         self._date_cleaner = re.compile(r"\s+")
+        self._digit_map = {"0": "O", "1": "I", "2": "Z", "3": "Z", "4": "A", "5": "S", "6": "G", "7": "T", "8": "B", "9": "P"}
         self._cyr_map = {
             "А": "A", "Б": "B", "В": "V", "Г": "G", "Д": "D", "Е": "E", "Ё": "E",
             "Ж": "ZH", "З": "Z", "И": "I", "Й": "Y", "К": "K", "Л": "L", "М": "M",
             "Н": "N", "О": "O", "П": "P", "Р": "R", "С": "S", "Т": "T", "У": "U",
             "Ф": "F", "Х": "KH", "Ц": "TS", "Ч": "CH", "Ш": "SH", "Щ": "SCH",
             "Ъ": "", "Ы": "Y", "Ь": "", "Э": "E", "Ю": "YU", "Я": "YA",
-            "Қ": "K", "Ә": "A", "Ң": "N", "Ғ": "G", "Ү": "U", "Ұ": "U", "Ө": "O", "Һ": "H",
+            "Қ": "K", "Ә": "A", "Ң": "N", "Ғ": "G", "Ү": "U", "Ұ": "U", "Ө": "O", "Һ": "H", "І": "I", "і": "I",
             "а": "A", "б": "B", "в": "V", "г": "G", "д": "D", "е": "E", "ё": "E",
             "ж": "ZH", "з": "Z", "и": "I", "й": "Y", "к": "K", "л": "L", "м": "M",
             "н": "N", "о": "O", "п": "P", "р": "R", "с": "S", "т": "T", "у": "U",
@@ -74,6 +75,36 @@ class PassportParser:
             "ъ": "", "ы": "Y", "ь": "", "э": "E", "ю": "YU", "я": "YA",
             "қ": "K", "ә": "A", "ң": "N", "ғ": "G", "ү": "U", "ұ": "U", "ө": "O", "һ": "H",
         }
+
+    def validate_iin_checksum(self, iin: str) -> bool:
+        """Проверка контрольной суммы ИИН Казахстана."""
+        if not iin or len(iin) != 12 or not iin.isdigit():
+            return False
+
+        weights1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        checksum = sum(int(iin[i]) * weights1[i] for i in range(11)) % 11
+
+        if checksum == 10:
+            weights2 = [3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2]
+            checksum = sum(int(iin[i]) * weights2[i] for i in range(11)) % 11
+
+        return checksum == int(iin[11])
+
+    def _calculate_mrz_check_digit(self, data: str) -> int:
+        """Расчет контрольной цифры MRZ (стандарт ICAO)."""
+        weights = [7, 3, 1]
+        total = 0
+        for i, char in enumerate(data):
+            if char == '<':
+                val = 0
+            elif '0' <= char <= '9':
+                val = ord(char) - ord('0')
+            elif 'A' <= char <= 'Z':
+                val = ord(char) - ord('A') + 10
+            else:
+                val = 0
+            total += val * weights[i % 3]
+        return total % 10
 
     def _clean_date(self, value: str) -> str:
         """Удаляет лишние пробелы и нормализует разделители."""
@@ -92,6 +123,20 @@ class PassportParser:
         if not value:
             return ""
         return "".join(self._cyr_map.get(ch, ch) for ch in value)
+
+    def _normalize_token(self, value: str) -> str:
+        """
+        Приводит имя/фамилию к латинице, убирает шум и OCR-цифры.
+        """
+        if not value:
+            return ""
+        # Транслитерация кириллицы
+        value = self._transliterate(value)
+        # Заменяем похожие цифры на буквы
+        value = "".join(self._digit_map.get(ch, ch) for ch in value)
+        # Оставляем только латиницу и пробелы
+        value = re.sub(r"[^A-Z\s]", "", value.upper())
+        return value.strip()
 
     def preprocess_image(self, image: Image.Image) -> np.ndarray:
         """Улучшение качества изображения"""
@@ -327,15 +372,17 @@ class PassportParser:
                         if self.debug:
                             print(f"     ⚠️  Фамилия на кириллице, транслитерируем...")
                         last_name = self._transliterate(last_name)
-                        if self.debug:
-                            print(f"     ✅ После транслитерации: '{last_name}'")
+                    last_name = self._normalize_token(last_name)
+                    if self.debug:
+                        print(f"     ✅ После транслитерации: '{last_name}'")
 
                     if self._contains_cyrillic(first_name):
                         if self.debug:
                             print(f"     ⚠️  Имя на кириллице, транслитерируем...")
                         first_name = self._transliterate(first_name)
-                        if self.debug:
-                            print(f"     ✅ После транслитерации: '{first_name}'")
+                    first_name = self._normalize_token(first_name)
+                    if self.debug:
+                        print(f"     ✅ После транслитерации: '{first_name}'")
 
                     mrz_data["last_name"] = last_name
                     mrz_data["first_name"] = first_name
@@ -370,9 +417,10 @@ class PassportParser:
             if self._contains_cyrillic(last_name_raw):
                 if self.debug:
                     print(f"⚠️ MRZ фамилия на кириллице: {last_name_raw}")
-                last_name_raw = self._transliterate(last_name_raw)
-                if self.debug:
-                    print(f"✅ После транслитерации: {last_name_raw}")
+            last_name_raw = self._transliterate(last_name_raw)
+            last_name_raw = self._normalize_token(last_name_raw)
+            if self.debug:
+                print(f"✅ После транслитерации: {last_name_raw}")
             mrz_data["last_name"] = last_name_raw
 
             if len(name_part) > 1:
@@ -381,9 +429,10 @@ class PassportParser:
                 if self._contains_cyrillic(first_name_raw):
                     if self.debug:
                         print(f"⚠️ MRZ имя на кириллице: {first_name_raw}")
-                    first_name_raw = self._transliterate(first_name_raw)
-                    if self.debug:
-                        print(f"✅ После транслитерации: {first_name_raw}")
+                first_name_raw = self._transliterate(first_name_raw)
+                first_name_raw = self._normalize_token(first_name_raw)
+                if self.debug:
+                    print(f"✅ После транслитерации: {first_name_raw}")
                 mrz_data["first_name"] = first_name_raw
             elif not mrz_data.get("first_name"):
                 # Если нет двойных шевронов, пробуем разделить по одинарным
@@ -395,18 +444,29 @@ class PassportParser:
                         last_name_raw = self._transliterate(last_name_raw)
                     if self._contains_cyrillic(first_name_raw):
                         first_name_raw = self._transliterate(first_name_raw)
+                    last_name_raw = self._normalize_token(last_name_raw)
+                    first_name_raw = self._normalize_token(first_name_raw)
                     mrz_data["last_name"] = last_name_raw
                     mrz_data["first_name"] = first_name_raw
 
-        if len(line2) >= 9:
-            mrz_doc = line2[0:9].replace("<", "")
-            if mrz_doc:
-                mrz_data["document_number"] = mrz_doc
+        if len(line2) >= 10:
+            doc_field = line2[0:9]
+            doc_check = line2[9]
+            doc_number = doc_field.replace("<", "")
+            if doc_number:
+                if doc_check.isdigit() and self._calculate_mrz_check_digit(doc_field) == int(doc_check):
+                    mrz_data["document_number"] = doc_number
+                elif doc_number:
+                    mrz_data["document_number"] = doc_number
 
         raw_exp = line2[21:27] if len(line2) >= 27 else ""
+        exp_check = line2[27] if len(line2) >= 28 else ""
         exp_date = self._mrz_date_to_iso(raw_exp)
         if exp_date:
-            mrz_data["expiration_date"] = exp_date
+            if exp_check.isdigit() and self._calculate_mrz_check_digit(raw_exp) == int(exp_check):
+                mrz_data["expiration_date"] = exp_date
+            elif not exp_check:
+                mrz_data["expiration_date"] = exp_date
 
         return mrz_data
 
@@ -436,10 +496,23 @@ class PassportParser:
             print("🔍 НАЧАЛО ПАРСИНГА")
             print("="*60)
 
+        # 0. Телефон (если вдруг попал в скан)
+        phone_match = re.search(r'(?:\+7|8)\s?\(?\d{3}\)?\s?\d{3}[\s-]?\d{2}[\s-]?\d{2}', text)
+        if phone_match:
+            data.phone = phone_match.group(0)
+
         # 1. ИИН (12 цифр подряд)
-        iin_match = re.search(r'\b(\d{12})\b', text)
-        if iin_match:
-            data.iin = iin_match.group(1)
+        iin_candidates = re.findall(r'\b(\d{12})\b', text)
+        chosen_iin = ""
+        for cand in iin_candidates:
+            if self.validate_iin_checksum(cand):
+                chosen_iin = cand
+                break
+        if not chosen_iin and iin_candidates:
+            chosen_iin = iin_candidates[0]  # берем первый, если чек-сумма не прошла
+
+        if chosen_iin:
+            data.iin = chosen_iin
             if self.debug:
                 print(f"✅ ИИН: {data.iin}")
 
@@ -503,22 +576,31 @@ class PassportParser:
                 # Парсим все строки и выбираем латиницу если есть
                 lines = raw_last_name.split('\n')
                 best_line = None
+                best_score = -1
+                best_vowels = -1
                 for line in lines:
                     clean = line.strip()
                     if not clean or not re.match(r'^[A-ZА-ЯӘӨҮҰҒҚҢҺІЁ\s]+$', clean):
                         continue
-                    # Считаем латинские буквы
-                    latin_count = sum(1 for c in clean if c.isupper() and ord('A') <= ord(c) <= ord('Z'))
-                    if best_line is None:
+                    latin_count = sum(1 for c in clean if 'A' <= c.upper() <= 'Z')
+                    cyr_count = sum(1 for c in clean if 'А' <= c.upper() <= 'Я' or c in "ЁӘӨҮҰҒҚҢҺІ")
+                    vowel_count = sum(1 for c in clean if c.upper() in "AEIOUY")
+                    score = latin_count * 2 - cyr_count
+                    if (
+                        score > best_score
+                        or (score == best_score and vowel_count > best_vowels)
+                        or (score == best_score and vowel_count == best_vowels)
+                    ):
+                        best_score = score
+                        best_vowels = vowel_count
                         best_line = clean
-                    elif latin_count > sum(1 for c in best_line if c.isupper() and ord('A') <= ord(c) <= ord('Z')):
-                        best_line = clean  # Это латиница - лучше
 
                 if best_line:
-                    data.last_name = best_line
+                    normalized = self._normalize_token(best_line)
+                    data.last_name = normalized or best_line
                     if self.debug:
                         print(f"✅ Фамилия: {data.last_name}")
-                    break
+                break
 
         # Имя
         name_patterns = [
@@ -534,9 +616,11 @@ class PassportParser:
                 lines = [ln.strip() for ln in name_text.split('\n') if ln.strip()]
                 if lines:
                     best_line = max(lines, key=lambda l: sum(1 for c in l if 'A' <= c.upper() <= 'Z'))
-                    # Фильтр: выкинуть служебные слова
-                    cleaned = re.sub(r'[^A-Za-z]', '', best_line)
+                    cleaned = self._normalize_token(best_line)
                     if cleaned and len(cleaned) > 2 and "PASSPORT" not in cleaned.upper():
+                        parts = cleaned.split()
+                        if len(parts) > 1 and len(parts[0]) <= 3 and len(parts[1]) > 3:
+                            cleaned = parts[1]  # отбрасываем служебный префикс вроде ZH
                         data.first_name = cleaned
                         if self.debug:
                             print(f"✅ Найдено имя: {data.first_name}")
@@ -547,7 +631,7 @@ class PassportParser:
             lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
             latin_lines = []
             for ln in lines:
-                cleaned = re.sub(r'[^A-Za-z]', '', ln)
+                cleaned = self._normalize_token(ln)
                 if not cleaned or len(cleaned) < 2 or len(cleaned) > 30:
                     continue
                 up = cleaned.upper()
@@ -560,6 +644,25 @@ class PassportParser:
                 data.first_name = latin_lines[0]
                 if self.debug:
                     print(f"✅ Имя по латинице из текста: {data.first_name}")
+
+        # Доп. fallback для фамилии: ищем любую подходящую строку, если ещё пусто
+        if not data.last_name:
+            for ln in text.splitlines():
+                cleaned = self._normalize_token(ln)
+                if not cleaned or len(cleaned) < 4 or len(cleaned) > 25:
+                    continue
+                up = cleaned.upper()
+                if any(x in up for x in ["PASSPORT", "KAZ", "NATIONALITY", "MINISTRY", "GIVEN", "SURNAME"]):
+                    continue
+                if data.first_name and up == data.first_name.upper():
+                    continue
+                parts = cleaned.split()
+                if len(parts) > 1 and len(parts[-1]) <= 2:
+                    cleaned = " ".join(parts[:-1])
+                data.last_name = cleaned
+                if self.debug:
+                    print(f"✅ Фамилия (fallback): {data.last_name}")
+                break
 
         # ВАЖНО: Проверяем, не попали ли оба имени в одно поле
         if data.last_name and not data.first_name:
