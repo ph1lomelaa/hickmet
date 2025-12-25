@@ -258,7 +258,7 @@ async def api_passport_parse(file: UploadFile = File(...)):
                 # Конвертируем PDF в PNG
                 print(f"🔄 Конвертация PDF в PNG...")
                 poppler_path = os.getenv("POPPLER_PATH", "/opt/homebrew/bin")
-                pages = convert_from_path(temp_path, dpi=200, poppler_path=poppler_path)
+                pages = convert_from_path(temp_path, dpi=300, poppler_path=poppler_path)
                 if pages:
                     pages[0].save(png_path, 'PNG')
                     print(f"✅ PDF сконвертирован: {png_path}")
