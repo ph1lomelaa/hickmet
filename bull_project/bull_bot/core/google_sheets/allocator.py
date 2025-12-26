@@ -386,24 +386,52 @@ def find_best_slot_for_group(all_rows, target_pkg_name, group_data, target_room_
     else:
         # РЕЖИМ "РАЗДЕЛЬНО" - размещаем по полу
         print("\n🚻 Режим 'РАЗДЕЛЬНО' - размещаем мужчин и женщин отдельно")
-        
+
+        # 🔥 ИСПРАВЛЕНИЕ: Сохраняем индексы каждого человека в исходном списке
+        male_indices = []
+        female_indices = []
+
+        for idx, person in enumerate(group_data):
+            gender = normalize(person.get('Gender', 'M')).upper()
+            if gender == 'M':
+                male_indices.append(idx)
+            else:
+                female_indices.append(idx)
+
         # Размещаем мужчин
+        male_rows = []
         if males:
             print(f"\n👨 Размещаем {len(males)} мужчин:")
             male_rows = place_gender_group(all_rows, header_row, end_row, cols, males, 'M', target_room)
             if not male_rows or len(male_rows) != len(males):
                 print(f"❌ Не удалось разместить всех мужчин")
                 return []
-            result_rows.extend(male_rows)
-        
+
         # Размещаем женщин
+        female_rows = []
         if females:
             print(f"\n👩 Размещаем {len(females)} женщин:")
             female_rows = place_gender_group(all_rows, header_row, end_row, cols, females, 'F', target_room)
             if not female_rows or len(female_rows) != len(females):
                 print(f"❌ Не удалось разместить всех женщин")
                 return []
-            result_rows.extend(female_rows)
+
+        # 🔥 ИСПРАВЛЕНИЕ: Восстанавливаем правильный порядок строк
+        # Создаем список нужного размера
+        result_rows = [None] * len(group_data)
+
+        # Размещаем мужчин на их исходные позиции
+        for i, original_idx in enumerate(male_indices):
+            result_rows[original_idx] = male_rows[i]
+
+        # Размещаем женщин на их исходные позиции
+        for i, original_idx in enumerate(female_indices):
+            result_rows[original_idx] = female_rows[i]
+
+        print(f"\n✅ Порядок восстановлен:")
+        for idx, (person, row) in enumerate(zip(group_data, result_rows)):
+            gender = person.get('Gender', 'M')
+            print(f"   {idx+1}. Пол {gender} → строка {row}")
 
     print(f"\n✅ Группа размещена! Строки: {result_rows}")
     return result_rows
@@ -470,14 +498,15 @@ def place_gender_group(all_rows, header_row, end_row, cols, people, gender, targ
     
     # Если не все размещены, ищем пустые комнаты
     while people_placed < group_size:
-        slot = find_empty_room_slot(all_rows, header_row, end_row, cols, target_room)
+        # 🔥 ИСПРАВЛЕНИЕ: Передаем пол для проверки
+        slot = find_empty_room_slot(all_rows, header_row, end_row, cols, target_room, required_gender=gender)
         if not slot:
-            print(f"   ❌ Не найдено свободных комнат")
+            print(f"   ❌ Не найдено свободных комнат для пола {gender}")
             return []
-        
+
         room_size = get_room_size(target_room)
         people_in_room = min(room_size, group_size - people_placed)
-        
+
         for j in range(people_in_room):
             result_rows.append(slot + j)
             all_rows[slot + j - 1][col_last] = "RESERVED"
@@ -489,26 +518,55 @@ def place_gender_group(all_rows, header_row, end_row, cols, people, gender, targ
     return result_rows
 
 
-def find_empty_room_slot(all_rows, header_row, end_row, cols, target_room):
-    """Поиск полностью пустой комнаты"""
+def find_empty_room_slot(all_rows, header_row, end_row, cols, target_room, required_gender=None):
+    """Поиск полностью пустой комнаты (или комнаты с людьми нужного пола)"""
     col_room = cols.get("room")
     col_last = cols.get("last_name")
+    col_gender = cols.get("gender")
     target_room_norm = normalize_room_value(target_room)
     room_capacity = get_room_size(target_room_norm)
-    
+
     for i in range(header_row + 1, end_row):
         row = all_rows[i]
         raw_room = normalize(row[col_room]) if col_room < len(row) else ""
-        
+
         if raw_room:
             prev_room_type = _norm_room_kind(raw_room, None)
-            
+
             if prev_room_type == target_room_norm:
-                # Проверяем, что все места в комнате пустые
-                if check_rows_are_empty(all_rows, i, room_capacity, col_last):
+                # Проверяем все места в комнате
+                room_genders = set()
+                all_empty = True
+                has_free_slots = False
+
+                for k in range(room_capacity):
+                    curr_idx = i + k
+                    if curr_idx >= len(all_rows):
+                        break
+
+                    c_row = all_rows[curr_idx]
+                    occupied = is_row_occupied(c_row, col_last)
+
+                    if occupied:
+                        all_empty = False
+                        # Определяем пол
+                        gen = c_row[col_gender] if col_gender and col_gender < len(c_row) else ""
+                        if gen:
+                            room_genders.add(normalize(gen).upper())
+                    else:
+                        has_free_slots = True
+
+                # Комната подходит если:
+                # 1. Полностью пустая
+                # 2. ИЛИ в комнате только люди нужного пола (если пол указан) И есть свободные места
+                if all_empty:
                     print(f"   🏨 Найдена пустая комната в строке {i + 1}")
                     return i + 1
-    
+                elif required_gender and has_free_slots and len(room_genders) == 1 and required_gender in room_genders:
+                    # В комнате уже есть люди того же пола И есть свободные места
+                    print(f"   🏨 Найдена комната с людьми пола {required_gender} (есть свободные места) в строке {i + 1}")
+                    return i + 1
+
     return None
 
 
