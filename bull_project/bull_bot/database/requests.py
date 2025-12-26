@@ -193,6 +193,17 @@ async def get_db_packages_list(sheet_id: str, sheet_name: str):
 
 async def get_all_bookings_in_package(sheet_id: str, sheet_name: str, pkg_name: str):
     """Для Отдела Заботы: все люди в пакете"""
+    # 🔥 ИСПРАВЛЕНИЕ: Убираем лишние пробелы
+    sheet_id = sheet_id.strip() if sheet_id else sheet_id
+    sheet_name = sheet_name.strip() if sheet_name else sheet_name
+    pkg_name = pkg_name.strip() if pkg_name else pkg_name
+
+    # 🔥 ДЕБАГ: Логирование запроса
+    print(f"\n🔍 get_all_bookings_in_package - ЗАПРОС В БД:")
+    print(f"   sheet_id: '{sheet_id}'")
+    print(f"   sheet_name: '{sheet_name}' (длина: {len(sheet_name)})")
+    print(f"   pkg_name: '{pkg_name}'")
+
     async with async_session() as session:
         query = select(Booking).where(
             Booking.table_id == sheet_id,
@@ -201,7 +212,10 @@ async def get_all_bookings_in_package(sheet_id: str, sheet_name: str, pkg_name: 
             Booking.status.notin_(('cancelled', 'rescheduled'))
         ).order_by(Booking.sheet_row_number)
         result = await session.scalars(query)
-        return result.all()
+        bookings = result.all()
+
+        print(f"   Результат: {len(bookings)} бронирований")
+        return bookings
 
 # === ОТЧЕТЫ (Admin) ===
 

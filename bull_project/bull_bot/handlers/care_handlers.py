@@ -155,17 +155,32 @@ async def care_sel_date(call: CallbackQuery, state: FSMContext):
     await state.update_data(current_sheet_name=sname)
     data = await state.get_data()
 
-    packages = await get_db_packages_list(data['current_sheet_id'], sname)
+    # 🔥 ИСПРАВЛЕНИЕ: Используем get_packages_from_sheet вместо get_db_packages_list
+    # Это та же функция, что используется при создании брони
+    packages_dict = get_packages_from_sheet(data['current_sheet_id'], sname)
 
-    if not packages:
-        await call.message.edit_text("❌ В этой дате нет активных броней в базе.", reply_markup=care_kb())
+    if not packages_dict:
+        await call.message.edit_text("❌ На этой дате нет пакетов.", reply_markup=care_kb())
         await state.clear()
         return
 
+    # Извлекаем только названия пакетов (значения из словаря)
+    packages = list(packages_dict.values())
+
+    print(f"\n🔍 ОТДЕЛ ЗАБОТ - найдено пакетов:")
+    print(f"   Sheet ID: {data['current_sheet_id']}")
+    print(f"   Sheet Name: {sname}")
+    print(f"   Пакеты: {packages}")
+
+    # 🔥 ИСПРАВЛЕНИЕ: Используем индекс вместо усечения названия
     kb = []
-    for pkg in packages:
+    for idx, pkg in enumerate(packages):
         if not pkg: continue
-        kb.append([InlineKeyboardButton(text=f"📦 {pkg[:30]}", callback_data=f"care_pkg:{pkg[:30]}")])
+        display_name = pkg[:40] if len(pkg) > 40 else pkg  # Для отображения
+        kb.append([InlineKeyboardButton(
+            text=f"📦 {display_name}",
+            callback_data=f"care_pkg:{idx}"  # Передаем индекс, а не название
+        )])
 
     await state.update_data(available_packages=packages)
 
@@ -174,12 +189,32 @@ async def care_sel_date(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(CareFlow.choosing_pkg, F.data.startswith("care_pkg:"))
 async def show_phone_list(call: CallbackQuery, state: FSMContext):
-    pkg_short = call.data.split(":")[1]
+    # 🔥 ИСПРАВЛЕНИЕ: Получаем индекс, а не усеченное название
+    pkg_idx_str = call.data.split(":")[1]
+    pkg_idx = int(pkg_idx_str)
     data = await state.get_data()
 
-    full_pkg_name = next((p for p in data['available_packages'] if p.startswith(pkg_short)), pkg_short)
+    available_packages = data.get('available_packages', [])
+    if pkg_idx >= len(available_packages):
+        await call.answer("Ошибка: пакет не найден", show_alert=True)
+        return
+
+    full_pkg_name = available_packages[pkg_idx]
+
+    # 🔥 ДЕБАГ: Показываем что ищем
+    print(f"\n📞 ОТДЕЛ ЗАБОТ - Поиск бронирований:")
+    print(f"   pkg_idx (из callback): {pkg_idx}")
+    print(f"   full_pkg_name (по индексу): {full_pkg_name}")
+    print(f"   sheet_id: {data['current_sheet_id']}")
+    print(f"   sheet_name: {data['current_sheet_name']}")
+    print(f"   available_packages: {available_packages}")
 
     bookings = await get_all_bookings_in_package(data['current_sheet_id'], data['current_sheet_name'], full_pkg_name)
+
+    print(f"   Найдено бронирований: {len(bookings) if bookings else 0}")
+    if bookings:
+        for i, b in enumerate(bookings[:3]):  # Показываем первые 3
+            print(f"   Бронь {i+1}: {b.guest_last_name} {b.guest_first_name} | {b.client_phone}")
 
     if not bookings:
         await call.answer("Пусто", show_alert=True)
