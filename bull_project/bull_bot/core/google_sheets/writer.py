@@ -3,7 +3,6 @@ from bull_project.bull_bot.core.google_sheets.client import (
     get_worksheet_by_title,
 )
 from bull_project.bull_bot.core.google_sheets.allocator import (
-    find_best_slot,
     check_has_train_column,
     find_package_row,
     find_headers_extended
@@ -19,6 +18,8 @@ def row_col_to_a1(row, col):
     return string + str(row)
 
 async def save_group_booking(group_data: list, common_data: dict, placement_mode: str, specific_row=None, is_share=False):
+    from bull_project.bull_bot.core.google_sheets.allocator import find_best_slot_for_group
+
     client = get_google_client()
     if not client:
         print("❌ Google client не инициализирован (get_google_client вернул None)")
@@ -39,7 +40,40 @@ async def save_group_booking(group_data: list, common_data: dict, placement_mode
         cols = None
         merge_tasks = []
 
-        if specific_row:
+        # 🔥 ИСПРАВЛЕНИЕ: Используем групповое размещение если паломников больше 1 или режим не specific_row
+        if not specific_row and len(group_data) > 0:
+            # Используем функцию группового размещения
+            saved_rows = find_best_slot_for_group(
+                all_values,
+                target_pkg,
+                group_data,
+                target_room,
+                placement_mode
+            )
+
+            if not saved_rows or len(saved_rows) != len(group_data):
+                print(f"❌ Групповое размещение вернуло неполный список строк")
+                print(f"   Ожидалось: {len(group_data)}, получено: {len(saved_rows)}")
+                return []
+
+            # Получаем колонки для записи данных
+            pkg_row = find_package_row(all_values, target_pkg)
+            if pkg_row is not None:
+                for r in range(pkg_row, min(pkg_row + 15, len(all_values))):
+                    cols = find_headers_extended(all_values[r])
+                    if cols: break
+
+            if not cols:
+                print(f"❌ Не найдены заголовки для пакета {target_pkg}")
+                return []
+
+            # Записываем данные для каждого паломника
+            for i, (person_passport, row_idx) in enumerate(zip(group_data, saved_rows)):
+                full_data = {**common_data, **person_passport}
+                _prepare_updates(updates, row_idx, cols, full_data)
+
+        elif specific_row:
+            # Старая логика для specific_row (ручное размещение)
             pkg_row = find_package_row(all_values, target_pkg)
             if pkg_row is not None:
                 for r in range(pkg_row, min(pkg_row + 15, len(all_values))):
@@ -47,59 +81,14 @@ async def save_group_booking(group_data: list, common_data: dict, placement_mode
                     if cols: break
             if not cols: return []
 
-        for i, person_passport in enumerate(group_data):
-            gender = person_passport.get('Gender', 'M')
-
-            # --- ПОИСК ---
-            if specific_row:
+            for i, person_passport in enumerate(group_data):
                 row_idx = specific_row + i
-                action = "manual"
-                cols_found = cols
-            else:
-                row_idx, cols_found, action = find_best_slot(all_values, target_pkg, gender, target_room)
-                cols = cols_found
-
-            if row_idx:
                 saved_rows.append(row_idx)
                 full_data = {**common_data, **person_passport}
                 _prepare_updates(updates, row_idx, cols, full_data)
-
-                # Блокируем место в памяти
-                if 'last_name' in cols and (row_idx - 1) < len(all_values):
-                    all_values[row_idx - 1][cols['last_name']] = "RESERVED"
-                    # Сохраняем пол, чтобы следующая итерация видела, кто тут
-                    if 'gender' in cols:
-                        all_values[row_idx - 1][cols['gender']] = gender
-
-                # --- СТРУКТУРА (ТЕТРИС) ---
-                if not is_share and not specific_row:
-                    r_col = cols['room']
-                    col_letter = row_col_to_a1(1, r_col + 1).replace("1", "")
-
-                    if "trans" in action:
-                        print(f"🔧 Тетрис: {action} (стр {row_idx})")
-
-                        if action == "trans_1quad_2dbl":
-                            do_transform(ws, updates, merge_tasks, all_values, row_idx, r_col, col_letter, 4, [['Double'], [''], ['Double'], ['']], [(0,1), (2,3)])
-                        elif action == "trans_2quad_mix":
-                            do_transform(ws, updates, merge_tasks, all_values, row_idx, r_col, col_letter, 8, [['Triple'], [''], [''], ['Triple'], [''], [''], ['Double'], ['']], [(0,2), (3,5), (6,7)])
-                        elif action == "trans_2trpl_3dbl":
-                            do_transform(ws, updates, merge_tasks, all_values, row_idx, r_col, col_letter, 6, [['Double'], [''], ['Double'], [''], ['Double'], ['']], [(0,1), (2,3), (4,5)])
-                        elif action == "trans_3dbl_2trpl":
-                            do_transform(ws, updates, merge_tasks, all_values, row_idx, r_col, col_letter, 6, [['Triple'], [''], [''], ['Triple'], [''], ['']], [(0,2), (3,5)])
-                        elif action == "trans_2dbl_1quad":
-                            do_transform(ws, updates, merge_tasks, all_values, row_idx, r_col, col_letter, 4, [['Quadro'], [''], [''], ['']], [(0,3)])
-                        elif action == "trans_1dbl_2sgl":
-                            do_transform(ws, updates, merge_tasks, all_values, row_idx, r_col, col_letter, 2, [['Single'], ['Single']], [])
-                        elif action == "trans_1trpl_mix":
-                            do_transform(ws, updates, merge_tasks, all_values, row_idx, r_col, col_letter, 3, [['Double'], [''], ['Single']], [(0,1)])
-
-                    # Если простое заселение, но название не совпадает (мало ли)
-                    elif action == "manual" and not is_share:
-                        updates.append({'range': row_col_to_a1(row_idx, r_col + 1), 'values': [[target_room]]})
-
-            else:
-                print(f"❌ Место не найдено")
+        else:
+            print(f"❌ Пустой список паломников")
+            return []
 
         if updates: ws.batch_update(updates)
         if merge_tasks:
