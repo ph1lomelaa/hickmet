@@ -148,6 +148,7 @@ async def care_sel_table(call: CallbackQuery, state: FSMContext):
 
     await call.message.edit_text("✈️ <b>Выберите Лист (Дату):</b>", reply_markup=kb_select_sheet(sheets[:15], len(sheets)>15), parse_mode="HTML")
     await state.set_state(CareFlow.choosing_sheet)
+    await call.answer()
 
 @router.callback_query(CareFlow.choosing_sheet, F.data.startswith("sel_date:"))
 async def care_sel_date(call: CallbackQuery, state: FSMContext):
@@ -186,6 +187,7 @@ async def care_sel_date(call: CallbackQuery, state: FSMContext):
 
     await call.message.edit_text("📦 <b>Выберите Пакет для списка:</b>", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
     await state.set_state(CareFlow.choosing_pkg)
+    await call.answer()
 
 @router.callback_query(CareFlow.choosing_pkg, F.data.startswith("care_pkg:"))
 async def show_phone_list(call: CallbackQuery, state: FSMContext):

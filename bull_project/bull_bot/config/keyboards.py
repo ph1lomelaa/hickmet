@@ -19,10 +19,12 @@ def care_kb():
 
     CARE_SEARCH_URL = "https://ph1lomelaa.github.io/book/search-pilgrim.html"
     CARE_LISTS_URL = "https://ph1lomelaa.github.io/book/package-lists.html"
+    ADMIN_BOOKINGS_URL = "https://ph1lomelaa.github.io/book/admin-bookings.html"
 
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Найти паломника", web_app=WebAppInfo(url=CARE_SEARCH_URL))],
-        [InlineKeyboardButton(text="Сбор информации по пакету", web_app=WebAppInfo(url=CARE_LISTS_URL))],
+        [InlineKeyboardButton(text="🔎 Поиск туриста", callback_data="care_search")],
+        [InlineKeyboardButton(text="📞 Телефоны по пакетам", callback_data="care_phones")],
+        [InlineKeyboardButton(text="Список броней", web_app=WebAppInfo(url=ADMIN_BOOKINGS_URL))],
     ])
 
 def admin_kb():
