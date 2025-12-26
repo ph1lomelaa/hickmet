@@ -163,12 +163,32 @@ async def process_passport(message: Message, state: FSMContext):
         print(f"⚠️ Ошибка конвертации, используем оригинал: {e}")
         path = temp_path
 
-    msg = await message.answer("⏳ Читаю данные...")
+    msg = await message.answer("⏳ Читаю данные... (это может занять до 30 сек)\n\n💡 Если долго - можете ввести данные вручную")
 
     try:
-        # Включаем сохранение OCR текста и debug для первых 3 паспортов
-        parser = PassportParser(POPPLER_PATH, debug=(curr <= 3), save_ocr=True)
-        passport_result = parser.parse(path)  # Возвращает PassportData объект
+        import asyncio
+
+        # 🔥 ТАЙМАУТ: Даем OCR максимум 30 секунд
+        async def parse_with_timeout():
+            parser = PassportParser(POPPLER_PATH, debug=(curr <= 3), save_ocr=True)
+            # Запускаем парсинг в отдельном потоке (parser.parse блокирующая функция)
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, parser.parse, path)
+
+        try:
+            passport_result = await asyncio.wait_for(parse_with_timeout(), timeout=30.0)
+        except asyncio.TimeoutError:
+            print(f"⏱️ OCR превысил таймаут 30 секунд")
+            with suppress(Exception):
+                await msg.delete()
+            await state.update_data(temp_p={'passport_image_path': path})
+            await message.answer(
+                "⏱️ <b>Распознавание заняло слишком много времени</b>\n\n"
+                "Пожалуйста, введите <b>Фамилию и Имя</b> вручную:",
+                parse_mode="HTML"
+            )
+            await state.set_state(BookingFlow.waiting_manual_name)
+            return
 
         # 🔥 ИСПРАВЛЕНИЕ: Используем to_dict() для получения всех полей
         p_data = passport_result.to_dict()
@@ -226,9 +246,38 @@ async def process_passport(message: Message, state: FSMContext):
         with suppress(Exception):
             await msg.delete()
 
-        if not p_data.get('Last Name'):
+        # 🔥 ПРОВЕРКА КАЧЕСТВА РАСПОЗНАВАНИЯ
+        last_name = p_data.get('Last Name', '').strip()
+        first_name = p_data.get('First Name', '').strip()
+
+        # Проверяем качество распознавания
+        needs_manual_entry = False
+        reason = ""
+
+        if not last_name or len(last_name) < 2:
+            needs_manual_entry = True
+            reason = "Фамилия не распознана или слишком короткая"
+        elif not first_name or len(first_name) < 2:
+            needs_manual_entry = True
+            reason = "Имя не распознано или слишком короткое"
+        # Проверяем на слишком много спецсимволов (признак плохого OCR)
+        elif sum(not c.isalnum() and not c.isspace() for c in last_name) > len(last_name) * 0.3:
+            needs_manual_entry = True
+            reason = "Фамилия содержит много спецсимволов (плохое качество OCR)"
+        elif sum(not c.isalnum() and not c.isspace() for c in first_name) > len(first_name) * 0.3:
+            needs_manual_entry = True
+            reason = "Имя содержит много спецсимволов (плохое качество OCR)"
+
+        if needs_manual_entry:
+            print(f"⚠️ Требуется ручной ввод: {reason}")
+            print(f"   Last Name: '{last_name}'")
+            print(f"   First Name: '{first_name}'")
             await state.update_data(temp_p=p_data)
-            await message.answer("⚠️ Не распознано. Введите <b>Фамилию и Имя</b> вручную:", parse_mode="HTML")
+            await message.answer(
+                f"⚠️ <b>{reason}</b>\n\n"
+                "Пожалуйста, введите <b>Фамилию и Имя</b> вручную:",
+                parse_mode="HTML"
+            )
             await state.set_state(BookingFlow.waiting_manual_name)
         else:
             await next_step_pilgrim(message, state, p_data)
