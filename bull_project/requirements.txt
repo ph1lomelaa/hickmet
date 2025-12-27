@@ -43,6 +43,7 @@ packaging==25.0
 pdf2image==1.17.0
 pdfplumber==0.11.8
 pillow==12.0.0
+passporteye==2.1.1
 propcache==0.4.1
 proto-plus==1.26.1
 protobuf==6.33.2
