@@ -21,6 +21,7 @@ from bull_project.bull_bot.config.keyboards import (
     cancel_kb, get_menu_by_role, main_menu_kb, manager_kb
 )
 from bull_project.bull_bot.core.parsers.passport_parser import PassportParser
+from bull_project.bull_bot.core.parsers.passport_parser_easyocr import PassportParserEasyOCR
 from bull_project.bull_bot.database.requests import (
     add_user, get_user_role, add_booking_to_db, add_4u_request, get_admin_ids,
     update_booking_row, delete_user, get_user_by_id, get_booking_by_id, mark_booking_cancelled
@@ -117,6 +118,14 @@ async def input_count(message: Message, state: FSMContext):
 
 # В функции process_passport (строка ~100)
 
+PARSER_ENGINE = os.getenv("PASSPORT_ENGINE", "tesseract").lower()
+
+def create_passport_parser(debug=False, save_ocr=False):
+    if PARSER_ENGINE == "easyocr":
+        return PassportParserEasyOCR(POPPLER_PATH, debug=debug)
+    return PassportParser(POPPLER_PATH, debug=debug, save_ocr=save_ocr)
+
+
 @router.message(BookingFlow.waiting_passport, F.document | F.photo)
 async def process_passport(message: Message, state: FSMContext):
     ensure_uploads_dir()
@@ -170,7 +179,7 @@ async def process_passport(message: Message, state: FSMContext):
 
         # 🔥 ТАЙМАУТ: Даем OCR максимум 30 секунд
         async def parse_with_timeout():
-            parser = PassportParser(POPPLER_PATH, debug=(curr <= 3), save_ocr=True)
+            parser = create_passport_parser(debug=(curr <= 3), save_ocr=True)
             # Запускаем парсинг в отдельном потоке (parser.parse блокирующая функция)
             loop = asyncio.get_event_loop()
             return await loop.run_in_executor(None, parser.parse, path)

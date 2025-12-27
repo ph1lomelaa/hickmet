@@ -28,6 +28,7 @@ from bull_project.bull_bot.database.requests import (
     add_user,
 )
 from bull_project.bull_bot.core.parsers.passport_parser import PassportParser
+from bull_project.bull_bot.core.parsers.passport_parser_easyocr import PassportParserEasyOCR
 from bull_project.bull_bot.database.requests import (
     get_last_n_bookings_by_manager,
     get_booking_by_id,
@@ -50,7 +51,16 @@ from bull_project.bull_bot.config.constants import ABS_UPLOADS_DIR
 # uploads dir is shared via volume on API service
 os.makedirs(ABS_UPLOADS_DIR, exist_ok=True)
 # Инициализация парсера паспортов
-passport_parser = PassportParser(debug=False)
+def create_passport_parser():
+    engine = os.getenv("PASSPORT_ENGINE", "tesseract").lower()
+    if engine == "easyocr":
+        print("🆕 Passport parser: EasyOCR")
+        return PassportParserEasyOCR(poppler_path=os.getenv("POPPLER_PATH"), debug=False)
+    print("🆕 Passport parser: Tesseract")
+    return PassportParser(debug=False)
+
+
+passport_parser = create_passport_parser()
 
 # -----------------------------------------------------------------------------
 # FASTAPI НАСТРОЙКА

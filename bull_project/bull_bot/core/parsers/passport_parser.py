@@ -1,5 +1,5 @@
 import cv2
-import pytesseract
+import easyocr
 import numpy as np
 from pdf2image import convert_from_path
 from PIL import Image
@@ -59,9 +59,13 @@ class PassportParser:
     def __init__(self, poppler_path: str = None, debug: bool = False, save_ocr: bool = False):
         self.poppler_path = poppler_path
         self.debug = debug
-        self.save_ocr = save_ocr  # Новая опция для сохранения OCR текста
+        self.save_ocr = save_ocr
         self._date_cleaner = re.compile(r"\s+")
-        self._digit_map = {"0": "O", "1": "I", "2": "Z", "3": "Z", "4": "A", "5": "S", "6": "G", "7": "T", "8": "B", "9": "P"}
+
+        # Инициализация EasyOCR с поддержкой английского, русского и казахского
+        # gpu=False чтобы работало на CPU (на Koyeb может не быть GPU)
+        self.reader = None  # Ленивая инициализация при первом использовании
+
         self._cyr_map = {
             "А": "A", "Б": "B", "В": "V", "Г": "G", "Д": "D", "Е": "E", "Ё": "E",
             "Ж": "ZH", "З": "Z", "И": "I", "Й": "Y", "К": "K", "Л": "L", "М": "M",
@@ -76,6 +80,15 @@ class PassportParser:
             "ъ": "", "ы": "Y", "ь": "", "э": "E", "ю": "YU", "я": "YA",
             "қ": "K", "ә": "A", "ң": "N", "ғ": "G", "ү": "U", "ұ": "U", "ө": "O", "һ": "H",
         }
+
+    def _init_reader(self):
+        """Ленивая инициализация EasyOCR (только когда нужно)"""
+        if self.reader is None:
+            if self.debug:
+                print("🔧 Инициализация EasyOCR (en, ru, kk)...")
+            self.reader = easyocr.Reader(['en', 'ru'], gpu=False, verbose=False)
+            if self.debug:
+                print("✅ EasyOCR готов")
 
     def validate_iin_checksum(self, iin: str) -> bool:
         """Проверка контрольной суммы ИИН Казахстана."""
@@ -126,59 +139,40 @@ class PassportParser:
         return "".join(self._cyr_map.get(ch, ch) for ch in value)
 
     def _normalize_token(self, value: str) -> str:
-        """
-        Приводит имя/фамилию к латинице, убирает шум и OCR-цифры.
-        """
+        """Приводит имя/фамилию к латинице, убирает шум."""
         if not value:
             return ""
         # Транслитерация кириллицы
         value = self._transliterate(value)
-        # Заменяем похожие цифры на буквы
-        value = "".join(self._digit_map.get(ch, ch) for ch in value)
         # Оставляем только латиницу и пробелы
         value = re.sub(r"[^A-Z\s]", "", value.upper())
         return value.strip()
 
     def preprocess_image(self, image: Image.Image, aggressive: bool = False) -> np.ndarray:
-        """Улучшение качества изображения
-
-        Args:
-            image: Исходное изображение
-            aggressive: Если True, применяет более агрессивную обработку для MRZ
-        """
+        """Улучшение качества изображения для OCR"""
         img = np.array(image)
 
         # Конвертируем в grayscale если нужно
         if len(img.shape) == 3:
             if img.shape[2] == 4:  # RGBA
                 gray = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)
-            elif img.shape[2] == 3:  # RGB или BGR
+            elif img.shape[2] == 3:  # RGB
                 gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
             else:
                 gray = img
         elif len(img.shape) == 2:
-            # Уже grayscale
             gray = img
         else:
             gray = img
 
         if aggressive:
             # Агрессивная обработка для MRZ
-            # Увеличиваем резкость
-            kernel_sharpen = np.array([[-1,-1,-1],
-                                      [-1, 9,-1],
-                                      [-1,-1,-1]])
+            kernel_sharpen = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
             gray = cv2.filter2D(gray, -1, kernel_sharpen)
-
-            # Более сильный CLAHE
             clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
             enhanced = clahe.apply(gray)
-
-            # Морфологические операции для очистки шума
             kernel = np.ones((2, 2), np.uint8)
             enhanced = cv2.morphologyEx(enhanced, cv2.MORPH_CLOSE, kernel)
-
-            # Адаптивная бинаризация
             binary = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                           cv2.THRESH_BINARY, 11, 2)
         else:
@@ -190,87 +184,44 @@ class PassportParser:
         return binary
 
     def extract_mrz_from_image(self, pil_image: Image.Image) -> str:
-        """Специальное извлечение MRZ зоны с оптимизированным OCR
-
-        Args:
-            pil_image: PIL изображение паспорта
-
-        Returns:
-            Текст MRZ или пустая строка
-        """
+        """Извлечение MRZ зоны с помощью EasyOCR"""
         try:
-            # Конвертируем в numpy
-            img = np.array(pil_image)
+            self._init_reader()
 
-            # Если это RGB/RGBA, конвертируем в grayscale сначала
+            img = np.array(pil_image)
             if len(img.shape) == 3:
-                if img.shape[2] == 4:  # RGBA
+                if img.shape[2] == 4:
                     img = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)
-                elif img.shape[2] == 3:  # RGB
+                elif img.shape[2] == 3:
                     img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
             height, width = img.shape[:2]
-
-            # Вырезаем нижние 20% изображения (где обычно находится MRZ)
-            # Увеличил с 15% до 20% для большей надежности
+            # Вырезаем нижние 20% изображения (MRZ зона)
             mrz_region = img[int(height * 0.80):, :]
 
             if self.debug:
-                print(f"🔍 MRZ регион: {mrz_region.shape}, диапазон: {int(height * 0.80)} - {height}")
+                print(f"🔍 MRZ регион: {mrz_region.shape}")
 
-            # Конвертируем обратно в PIL для предобработки
+            # Предобрабатываем для лучшего распознавания MRZ
             mrz_pil = Image.fromarray(mrz_region)
+            processed = self.preprocess_image(mrz_pil, aggressive=True)
 
-            # Попробуем несколько вариантов обработки
-            processed_variants = []
+            # EasyOCR для MRZ (только английский алфавит для MRZ)
+            # Используем allowlist для ограничения символов
+            results = self.reader.readtext(
+                processed,
+                detail=0,  # Только текст, без координат
+                paragraph=False,  # Построчно
+                allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
+            )
 
-            # 1. Стандартная предобработка
-            try:
-                processed_variants.append(self.preprocess_image(mrz_pil, aggressive=False))
-            except:
-                pass
-
-            # 2. Агрессивная предобработка
-            try:
-                processed_variants.append(self.preprocess_image(mrz_pil, aggressive=True))
-            except:
-                pass
-
-            # 3. Без предобработки (только grayscale)
-            try:
-                processed_variants.append(mrz_region)
-            except:
-                pass
-
-            # Попробуем разные комбинации: обработка + конфигурация OCR
-            configs = [
-                '--psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<',  # Стандартная
-                '--psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<',  # Одна строка
-                '--psm 6',  # Без whitelist
-            ]
-
-            best_text = ""
-            for processed_img in processed_variants:
-                for config in configs:
-                    try:
-                        mrz_text = pytesseract.image_to_string(
-                            processed_img,
-                            lang="eng",  # Только английский!
-                            config=config
-                        )
-                        # Выбираем результат с наибольшим количеством шевронов или латинских букв
-                        score = mrz_text.count('<') * 2 + sum(1 for c in mrz_text if c.isalpha() and c.isupper())
-                        best_score = best_text.count('<') * 2 + sum(1 for c in best_text if c.isalpha() and c.isupper())
-                        if score > best_score:
-                            best_text = mrz_text
-                    except:
-                        continue
+            mrz_text = '\n'.join(results)
 
             if self.debug:
-                print(f"🔍 MRZ OCR (специальный):")
-                print(best_text[:300] if len(best_text) > 300 else best_text)
+                print(f"🔍 MRZ OCR (EasyOCR):")
+                print(mrz_text[:300] if len(mrz_text) > 300 else mrz_text)
 
-            return best_text
+            return mrz_text
 
         except Exception as e:
             if self.debug:
@@ -280,54 +231,47 @@ class PassportParser:
             return ""
 
     def _is_ocr_quality_good(self, text: str) -> bool:
-        """Проверяет качество OCR текста - есть ли в нем хоть что-то осмысленное"""
+        """Проверяет качество OCR текста"""
         if not text or len(text) < 20:
             return False
 
-        # Считаем количество букв (латиница + кириллица)
         letters = sum(1 for c in text if c.isalpha())
-        # Считаем количество мусора (не буквы, не цифры, не пробелы, не знаки препинания)
         total_chars = len(text.replace(" ", "").replace("\n", ""))
 
         if total_chars == 0:
             return False
 
-        # Если меньше 35% текста - буквы, это мусор
-        # (35% вместо 40% чтобы учесть MRZ зону с символами <<<<)
         letter_ratio = letters / total_chars
         if letter_ratio < 0.35:
             return False
 
-        # Ищем нормальные слова (минимум 4 буквы подряд)
         words = re.findall(r'[A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{4,}', text, re.IGNORECASE)
-        if len(words) < 3:  # Минимум 3 слова
+        if len(words) < 3:
             return False
 
-        # Проверка на явный мусор: слишком много одиночных букв и цифр
         single_chars = re.findall(r'\b[A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]\b', text, re.IGNORECASE)
-        if len(single_chars) > len(words) * 2:  # Если одиночных символов больше чем в 2 раза
+        if len(single_chars) > len(words) * 2:
             return False
 
-        # Проверка на наличие структурированных данных паспорта
-        # Хотя бы один из этих паттернов должен присутствовать
-        has_iin = bool(re.search(r'\d{12}', text))  # ИИН (12 цифр)
-        has_doc_number = bool(re.search(r'[N№]\s*\d{7,9}', text))  # Номер документа
-        has_date = bool(re.search(r'\d{2}[./]\d{2}[./]\d{4}', text))  # Дата
-        has_mrz = bool(re.search(r'<{3,}', text))  # MRZ символы
+        has_iin = bool(re.search(r'\d{12}', text))
+        has_doc_number = bool(re.search(r'[N№]\s*\d{7,9}', text))
+        has_date = bool(re.search(r'\d{2}[./]\d{2}[./]\d{4}', text))
+        has_mrz = bool(re.search(r'<{3,}', text))
 
-        # Если нет ни одного структурированного поля - скорее всего мусор
         if not (has_iin or has_doc_number or has_date or has_mrz):
             return False
 
         return True
 
     def extract_ocr_text(self, file_path: str) -> tuple:
-        """Извлечение текста через Tesseract с fallback на pdfplumber
+        """Извлечение текста через EasyOCR с fallback на pdfplumber
 
         Returns:
             tuple: (основной текст, MRZ текст из специального OCR)
         """
         try:
+            self._init_reader()
+
             if file_path.lower().endswith('.pdf'):
                 pages = convert_from_path(file_path, dpi=300, poppler_path=self.poppler_path)
                 if not pages:
@@ -336,17 +280,14 @@ class PassportParser:
             else:
                 pil_image = Image.open(file_path)
 
-            # 1. Стандартный OCR для всего документа
+            # 1. Стандартный OCR для всего документа с EasyOCR
             processed_img = self.preprocess_image(pil_image)
 
-            # Используем несколько языков для лучшего распознавания
-            text = pytesseract.image_to_string(
-                processed_img,
-                lang="kaz+rus+eng",
-                config='--psm 6'  # Assume uniform block of text
-            )
+            # EasyOCR - многоязычный режим (en, ru)
+            results = self.reader.readtext(processed_img, detail=0, paragraph=True)
+            text = '\n'.join(results)
 
-            # Всегда сохраняем OCR текст в файл для отладки
+            # Сохраняем OCR текст в файл для отладки
             if self.save_ocr or self.debug:
                 ocr_file = file_path + ".ocr_text.txt"
                 with open(ocr_file, "w", encoding="utf-8") as f:
@@ -358,7 +299,7 @@ class PassportParser:
                 print(text)
                 print("="*40 + " OCR TEXT END")
 
-            # 2. Специальный OCR для MRZ зоны (только латиница)
+            # 2. Специальный OCR для MRZ зоны
             mrz_text = self.extract_mrz_from_image(pil_image)
 
             # 3. FALLBACK: Если OCR дал плохой результат и это PDF - пробуем pdfplumber
@@ -370,15 +311,10 @@ class PassportParser:
                     with pdfplumber.open(file_path) as pdf:
                         if pdf.pages:
                             pdf_text = pdf.pages[0].extract_text()
-                            # Если pdfplumber дал текст и он хорошего качества - используем его
                             if pdf_text and len(pdf_text) > 50 and self._is_ocr_quality_good(pdf_text):
                                 if self.debug:
-                                    print("✅ PDF текст извлечен успешно, используем его вместо OCR")
-                                    print("📄 PDF TEXT START" + "="*40)
-                                    print(pdf_text)
-                                    print("="*40 + " PDF TEXT END")
+                                    print("✅ PDF текст извлечен успешно")
                                 text = pdf_text
-                                # Для PDF текста не нужен специальный MRZ OCR, он уже есть в тексте
                 except Exception as e:
                     if self.debug:
                         print(f"⚠️ Не удалось извлечь текст из PDF: {e}")
@@ -396,7 +332,7 @@ class PassportParser:
         return "M" if digit in [1, 3, 5] else "F" if digit in [2, 4, 6] else ""
 
     def extract_date_from_iin(self, iin: str) -> str:
-        """Извлечение даты рождения из ИИН (первые 6 цифр - YYMMDD)"""
+        """Извлечение даты рождения из ИИН"""
         if not iin or len(iin) < 6 or not iin[:6].isdigit():
             return ""
 
@@ -405,7 +341,6 @@ class PassportParser:
             mm = int(iin[2:4])
             dd = int(iin[4:6])
 
-            # Определяем век по 7-й цифре
             century_digit = int(iin[6]) if len(iin) > 6 else 0
             if century_digit in [1, 2]:
                 year = 1800 + yy
@@ -414,11 +349,9 @@ class PassportParser:
             elif century_digit in [5, 6]:
                 year = 2000 + yy
             else:
-                year = 1900 + yy  # По умолчанию 1900-е
+                year = 1900 + yy
 
-            # Проверяем валидность даты
             datetime(year, mm, dd)
-
             return f"{dd:02d}.{mm:02d}.{year}"
         except (ValueError, IndexError):
             return ""
@@ -444,7 +377,7 @@ class PassportParser:
         return previous_row[-1]
 
     def _are_similar_words(self, word1: str, word2: str) -> bool:
-        """Проверяет, похожи ли два слова (возможно один вариант - ошибка OCR)"""
+        """Проверяет, похожи ли два слова"""
         if not word1 or not word2:
             return False
 
@@ -452,30 +385,26 @@ class PassportParser:
         if w1 == w2:
             return True
 
-        # Слова должны быть примерно одной длины
         if abs(len(w1) - len(w2)) > 3:
             return False
 
-        # Вычисляем расстояние Левенштейна
         distance = self._levenshtein_distance(w1, w2)
         max_len = max(len(w1), len(w2))
-
-        # Если слова похожи на 60% и более - считаем дубликатами
         similarity = 1 - (distance / max_len)
+
         if similarity >= 0.6:
             return True
 
-        # Дополнительная проверка: начинаются похоже и заканчиваются похоже
         if len(w1) >= 4 and len(w2) >= 4:
-            # Проверяем, что хотя бы 3 из первых 4 букв совпадают
-            matches = sum(1 for i in range(min(4, len(w1), len(w2))) if i < len(w1) and i < len(w2) and w1[i] == w2[i])
+            matches = sum(1 for i in range(min(4, len(w1), len(w2)))
+                         if i < len(w1) and i < len(w2) and w1[i] == w2[i])
             if matches >= 3:
                 return True
 
         return False
 
     def _remove_similar_duplicates(self, parts: list) -> list:
-        """Удаляет похожие дубликаты из списка слов (оставляет более правильный вариант)"""
+        """Удаляет похожие дубликаты из списка слов"""
         if len(parts) <= 1:
             return parts
 
@@ -486,25 +415,20 @@ class PassportParser:
             if i in skip_indices:
                 continue
 
-            # Проверяем, есть ли похожее слово дальше
             found_similar = False
             for j in range(i + 1, len(parts)):
                 if j in skip_indices:
                     continue
 
                 if self._are_similar_words(word, parts[j]):
-                    # Нашли похожее слово - выбираем лучшее
-                    # Критерий: слово с большим количеством заглавных латинских букв
                     word_latin_count = sum(1 for c in word if c.isupper() and c.isalpha() and ord('A') <= ord(c) <= ord('Z'))
                     other_latin_count = sum(1 for c in parts[j] if c.isupper() and c.isalpha() and ord('A') <= ord(c) <= ord('Z'))
 
                     if other_latin_count > word_latin_count:
-                        # Другое слово лучше - пропускаем текущее
                         skip_indices.add(i)
                         found_similar = True
                         break
                     else:
-                        # Текущее слово лучше - пропускаем другое
                         skip_indices.add(j)
 
             if not found_similar:
@@ -517,31 +441,23 @@ class PassportParser:
         if not name_string:
             return ("", "")
 
-        # Убираем лишние пробелы и разбиваем
         parts = name_string.strip().split()
-
         if len(parts) == 0:
             return ("", "")
 
-        # Удаляем похожие дубликаты (OCR часто видит одно слово дважды)
         parts = self._remove_similar_duplicates(parts)
 
         if len(parts) == 0:
             return ("", "")
         elif len(parts) == 1:
-            # Если только одно слово - считаем фамилией
             return (parts[0], "")
         else:
-            # Первое слово - фамилия, остальные - имя
             last_name = parts[0]
             first_name = " ".join(parts[1:])
             return (last_name, first_name)
 
     def _name_quality(self, value: str) -> float:
-        """
-        Оцениваем качество имени/фамилии: штрафуем короткие обрезки и слишком много токенов.
-        Нужно, чтобы MRZ мог перекрыть шумный текст вроде "A Z AF OO".
-        """
+        """Оцениваем качество имени/фамилии"""
         if not value:
             return 0.0
         tokens = [t for t in value.split() if t]
@@ -559,7 +475,7 @@ class PassportParser:
         return score
 
     def _remove_noise_tokens(self, value: str) -> str:
-        """Убираем служебные слова, попавшие в итоговые имена."""
+        """Убираем служебные слова из имен"""
         if not value:
             return ""
         noise = {
@@ -571,115 +487,83 @@ class PassportParser:
         return " ".join(filtered).strip()
 
     def _looks_like_noise_name(self, value: str) -> bool:
-        """Эвристика для явного шума (заголовки, слипшиеся слова)."""
+        """Эвристика для явного шума"""
         if not value:
             return False
         up = value.upper()
         noise_fragments = ["SURNAME", "GIVEN", "NAME", "NAMES", "FIRST", "PASSPORT"]
         if any(n in up for n in noise_fragments):
             return True
-        # Если слишком мало гласных
+
         vowels = sum(1 for c in up if c in "AEIOUY")
         if vowels == 0 and len(up) > 4:
             return True
-        # Если одно слово длиннее 10 без пробелов и содержит не меньше 3 повторов одной буквы
+
         if " " not in value and len(up) >= 10 and max(up.count(c) for c in set(up)) >= 3:
             return True
         return False
 
     def parse_mrz(self, text: str, mrz_specialized_text: str = "") -> dict:
-        """Парсинг MRZ (Machine Readable Zone) - строка внизу паспорта
-
-        Args:
-            text: Основной OCR текст
-            mrz_specialized_text: Специализированный OCR только для MRZ зоны (только латиница)
-        """
+        """Парсинг MRZ зоны"""
         mrz_data = {}
 
-        # Если есть специализированный MRZ текст - используем его в первую очередь
-        if mrz_specialized_text and self.debug:
-            print(f"🎯 Используем специализированный MRZ OCR (только латиница)")
-
-        # Пробуем сначала специализированный текст, потом основной
         text_to_parse = mrz_specialized_text if mrz_specialized_text else text
-
         raw_lines = [line.strip().replace(" ", "") for line in text_to_parse.splitlines()]
 
-        # Если используем специализированный текст - разрешаем только латиницу
         if mrz_specialized_text:
-            # Только латиница, цифры и <
-            mrz_lines = [re.sub(r'[^A-Z0-9<]', '', line, flags=re.IGNORECASE) for line in raw_lines if len(re.sub(r'[^A-Z0-9<]', '', line, flags=re.IGNORECASE)) >= 25]
+            mrz_lines = [re.sub(r'[^A-Z0-9<]', '', line, flags=re.IGNORECASE)
+                        for line in raw_lines
+                        if len(re.sub(r'[^A-Z0-9<]', '', line, flags=re.IGNORECASE)) >= 25]
         else:
-            # Расширяем для поддержки кириллицы в MRZ (fallback)
-            mrz_lines = [re.sub(r'[^A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9<]', '', line, flags=re.IGNORECASE) for line in raw_lines if len(re.sub(r'[^A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9<]', '', line, flags=re.IGNORECASE)) >= 25]
+            mrz_lines = [re.sub(r'[^A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9<]', '', line, flags=re.IGNORECASE)
+                        for line in raw_lines
+                        if len(re.sub(r'[^A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9<]', '', line, flags=re.IGNORECASE)) >= 25]
 
-        # Проверяем качество MRZ строк - отфильтровываем явный мусор
+        # Проверяем качество MRZ строк
         if len(mrz_lines) >= 2:
-            # Проверяем первую строку на наличие служебных слов (признак что это не MRZ)
             noise_words = ["MINISTRY", "INTERNAL", "AFFAIRS", "PASSPORT", "NATIONALITY", "REPUBLIC"]
             line1_upper = mrz_lines[0].upper() if mrz_lines else ""
             is_noise = any(word in line1_upper for word in noise_words)
 
             if is_noise:
                 if self.debug:
-                    print(f"⚠️ MRZ строки содержат служебные слова (не настоящий MRZ), ищем паттерны")
-                mrz_lines = []  # Сбрасываем чтобы перейти к поиску паттернов
+                    print(f"⚠️ MRZ строки содержат служебные слова")
+                mrz_lines = []
 
         if len(mrz_lines) < 2:
-            # Ищем паттерн с шевронами (OCR может видеть << как < <, \< < и т.д.)
-            # Ищем в ИСХОДНОМ тексте (включая короткие строки)
+            # Ищем паттерн с шевронами
             patterns = [
-                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})\s*<<\s*([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})',  # стандартный <<
-                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})\s*<\s*<\s*([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})',  # < <
-                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})\\<\s*<\s*([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})',  # \< <
-                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})<\s+<\s*([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})',  # < <
-                # Дополнительные паттерны для плохих сканов (только одно имя с шевронами)
-                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{4,})\s*<{3,}',  # Имя с минимум 3 шевронами (FATULLA <<<<)
+                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})\s*<<\s*([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})',
+                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})\s*<\s*<\s*([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ0-9]{3,})',
+                r'([A-ZА-ЯӘӨҮҰҒҚҢҺІЁ]{4,})\s*<{3,}',
             ]
 
             for pattern in patterns:
                 match = re.search(pattern, text_to_parse, re.IGNORECASE)
                 if match:
                     last_name = match.group(1).replace("<", "").replace("\\", "").strip()
-                    # Проверяем есть ли вторая группа (имя)
                     try:
                         first_name = match.group(2).replace("<", "").replace("\\", "").strip()
                     except IndexError:
-                        # Паттерн нашёл только одно слово (например FATULLA <<<<)
-                        # Пока не ясно это фамилия или имя - сохраним как имя
                         first_name = last_name
                         last_name = ""
 
-                    if self.debug:
-                        print(f"  📍 Найден MRZ паттерн:")
-                        print(f"     Исходная фамилия: '{last_name}'")
-                        print(f"     Исходное имя:     '{first_name}'")
-
-                    # Проверяем на кириллицу и цифры (признак ошибок OCR)
                     last_had_issues = self._contains_cyrillic(last_name) or any(c.isdigit() for c in last_name)
                     first_had_issues = self._contains_cyrillic(first_name) or any(c.isdigit() for c in first_name)
 
-                    # Транслитерируем если кириллица
                     if self._contains_cyrillic(last_name):
-                        if self.debug:
-                            print(f"     ⚠️  Фамилия на кириллице, транслитерируем...")
                         last_name = self._transliterate(last_name)
                     last_name = self._normalize_token(last_name)
-                    if self.debug:
-                        print(f"     ✅ После транслитерации: '{last_name}'")
 
                     if self._contains_cyrillic(first_name):
-                        if self.debug:
-                            print(f"     ⚠️  Имя на кириллице, транслитерируем...")
                         first_name = self._transliterate(first_name)
                     first_name = self._normalize_token(first_name)
-                    if self.debug:
-                        print(f"     ✅ После транслитерации: '{first_name}'")
 
                     mrz_data["last_name"] = last_name
                     mrz_data["first_name"] = first_name
                     mrz_data["last_had_issues"] = last_had_issues
                     mrz_data["first_had_issues"] = first_had_issues
+
                     if self.debug:
                         print(f"✅ MRZ (pattern): {mrz_data['last_name']} {mrz_data.get('first_name', '')}")
                     return mrz_data
@@ -688,71 +572,38 @@ class PassportParser:
 
         line1, line2 = mrz_lines[-2], mrz_lines[-1]
         if self.debug:
-            print(f"✅ MRZ строка 1 (raw): {line1}")
-            print(f"✅ MRZ строка 2 (raw): {line2}")
+            print(f"✅ MRZ строка 1: {line1}")
+            print(f"✅ MRZ строка 2: {line2}")
 
         # Обрабатываем стандартный формат MRZ
         if line1.startswith("P<"):
-            # Формат: P<XXX где XXX = код страны (3 буквы)
-            # После кода страны идет фамилия
             if len(line1) > 5:
-                # P< + 3 буквы кода = 5 символов
                 name_field = line1[5:]
             else:
-                name_field = line1[2:]  # Fallback: просто убираем P<
+                name_field = line1[2:]
         else:
             name_field = line1
 
-        # Разделяем по двойным шевронам
         name_part = name_field.split("<<", 1)
         if name_part:
             last_name_raw = name_part[0].replace("<", "")
-            # Проверяем на кириллицу и цифры (признак ошибок OCR)
             last_had_issues = self._contains_cyrillic(last_name_raw) or any(c.isdigit() for c in last_name_raw)
 
-            # Транслитерируем если кириллица
             if self._contains_cyrillic(last_name_raw):
-                if self.debug:
-                    print(f"⚠️ MRZ фамилия на кириллице: {last_name_raw}")
-            last_name_raw = self._transliterate(last_name_raw)
+                last_name_raw = self._transliterate(last_name_raw)
             last_name_raw = self._normalize_token(last_name_raw)
-            if self.debug:
-                print(f"✅ После транслитерации: {last_name_raw}")
             mrz_data["last_name"] = last_name_raw
             mrz_data["last_had_issues"] = last_had_issues
 
             first_had_issues = False
             if len(name_part) > 1:
-                # Убираем одинарные шевроны и лишние пробелы
                 first_name_raw = name_part[1].replace("<", " ").strip()
                 first_had_issues = self._contains_cyrillic(first_name_raw) or any(c.isdigit() for c in first_name_raw)
                 if self._contains_cyrillic(first_name_raw):
-                    if self.debug:
-                        print(f"⚠️ MRZ имя на кириллице: {first_name_raw}")
-                first_name_raw = self._transliterate(first_name_raw)
+                    first_name_raw = self._transliterate(first_name_raw)
                 first_name_raw = self._normalize_token(first_name_raw)
-                if self.debug:
-                    print(f"✅ После транслитерации: {first_name_raw}")
                 mrz_data["first_name"] = first_name_raw
                 mrz_data["first_had_issues"] = first_had_issues
-            elif not mrz_data.get("first_name"):
-                # Если нет двойных шевронов, пробуем разделить по одинарным
-                name_parts = name_field.replace("<", " ").split()
-                if len(name_parts) > 1:
-                    last_name_raw = name_parts[0]
-                    first_name_raw = " ".join(name_parts[1:])
-                    last_had_issues = self._contains_cyrillic(last_name_raw) or any(c.isdigit() for c in last_name_raw)
-                    first_had_issues = self._contains_cyrillic(first_name_raw) or any(c.isdigit() for c in first_name_raw)
-                    if self._contains_cyrillic(last_name_raw):
-                        last_name_raw = self._transliterate(last_name_raw)
-                    if self._contains_cyrillic(first_name_raw):
-                        first_name_raw = self._transliterate(first_name_raw)
-                    last_name_raw = self._normalize_token(last_name_raw)
-                    first_name_raw = self._normalize_token(first_name_raw)
-                    mrz_data["last_name"] = last_name_raw
-                    mrz_data["first_name"] = first_name_raw
-                    mrz_data["last_had_issues"] = last_had_issues
-                    mrz_data["first_had_issues"] = first_had_issues
 
         if len(line2) >= 10:
             doc_field = line2[0:9]
@@ -793,25 +644,20 @@ class PassportParser:
             return ""
 
     def parse_text(self, text: str, mrz_specialized_text: str = "") -> PassportData:
-        """Основной парсинг текста паспорта
-
-        Args:
-            text: Основной OCR текст
-            mrz_specialized_text: Специализированный OCR только для MRZ зоны
-        """
+        """Основной парсинг текста паспорта"""
         data = PassportData()
 
         if self.debug:
             print("\n" + "="*60)
-            print("🔍 НАЧАЛО ПАРСИНГА")
+            print("🔍 НАЧАЛО ПАРСИНГА (EasyOCR)")
             print("="*60)
 
-        # 0. Телефон (если вдруг попал в скан)
+        # Телефон
         phone_match = re.search(r'(?:\+7|8)\s?\(?\d{3}\)?\s?\d{3}[\s-]?\d{2}[\s-]?\d{2}', text)
         if phone_match:
             data.phone = phone_match.group(0)
 
-        # 1. ИИН (12 цифр подряд)
+        # ИИН
         iin_candidates = re.findall(r'\b(\d{12})\b', text)
         chosen_iin = ""
         for cand in iin_candidates:
@@ -819,14 +665,13 @@ class PassportParser:
                 chosen_iin = cand
                 break
         if not chosen_iin and iin_candidates:
-            chosen_iin = iin_candidates[0]  # берем первый, если чек-сумма не прошла
+            chosen_iin = iin_candidates[0]
 
         if chosen_iin:
             data.iin = chosen_iin
             if self.debug:
                 print(f"✅ ИИН: {data.iin}")
 
-            # Извлекаем пол и дату рождения из ИИН
             data.gender = self.get_gender_from_iin(data.iin)
             iin_dob = self.extract_date_from_iin(data.iin)
             if iin_dob and not data.dob:
@@ -834,9 +679,8 @@ class PassportParser:
                 if self.debug:
                     print(f"✅ Дата рождения из ИИН: {data.dob}")
 
-        # 2. ПОЛ (если не определен из ИИН)
+        # ПОЛ
         if not data.gender:
-            # Ищем пол в тексте
             gender_patterns = [
                 r'(?:ЖЫНЫСЫ|Sex|Gender)[\s:]*([МЖMFмжmf])',
                 r'Sex[\s/]*([MF])',
@@ -853,14 +697,14 @@ class PassportParser:
                         data.gender = "F"
                     if data.gender:
                         if self.debug:
-                            print(f"✅ Пол (текст): {data.gender}")
+                            print(f"✅ Пол: {data.gender}")
                         break
 
-        # 3. НОМЕР ДОКУМЕНТА (N + 7-9 цифр)
+        # НОМЕР ДОКУМЕНТА
         doc_patterns = [
-            r'(N\d{7,9})',  # N12345678 (7-9 цифр)
-            r'№[\s]*([NА-Я0-9]{7,9})',  # № 8505288 или № N12345678
-            r'ПАСПОРТ[^\n]*?([A-Z0-9]{7,9})',  # После слова ПАСПОРТ
+            r'(N\d{7,9})',
+            r'№[\s]*([NА-Я0-9]{7,9})',
+            r'ПАСПОРТ[^\n]*?([A-Z0-9]{7,9})',
         ]
 
         for pattern in doc_patterns:
@@ -871,8 +715,7 @@ class PassportParser:
                     print(f"✅ Номер документа: {data.document_number}")
                 break
 
-        # 4. ФАМИЛИЯ И ИМЯ
-        # Сначала пробуем найти через заголовки
+        # ФАМИЛИЯ И ИМЯ
         surname_patterns = [
             r'(?:ТЕП\s*/?\s*ЗҰҢАТМЕ|ТЕП|ТЕГІ|Surname)[\s:]*\n+([A-ZА-ЯӘӨҮҰҒҚҢҺІЁA-Z\s]+)',
             r'(?:Last\s*Name)[\s:]*\n+([A-Z\s]+)',
@@ -883,7 +726,6 @@ class PassportParser:
             surname_match = re.search(pattern, text, re.IGNORECASE)
             if surname_match:
                 raw_last_name = surname_match.group(1).strip()
-                # Парсим все строки и выбираем латиницу если есть
                 lines = raw_last_name.split('\n')
                 best_line = None
                 best_score = -1
@@ -896,11 +738,8 @@ class PassportParser:
                     cyr_count = sum(1 for c in clean if 'А' <= c.upper() <= 'Я' or c in "ЁӘӨҮҰҒҚҢҺІ")
                     vowel_count = sum(1 for c in clean if c.upper() in "AEIOUY")
                     score = latin_count * 2 - cyr_count
-                    if (
-                        score > best_score
-                        or (score == best_score and vowel_count > best_vowels)
-                        or (score == best_score and vowel_count == best_vowels)
-                    ):
+                    if (score > best_score or
+                        (score == best_score and vowel_count > best_vowels)):
                         best_score = score
                         best_vowels = vowel_count
                         best_line = clean
@@ -930,82 +769,17 @@ class PassportParser:
                     if cleaned and len(cleaned) > 2 and "PASSPORT" not in cleaned.upper():
                         parts = cleaned.split()
                         if len(parts) > 1 and len(parts[0]) <= 3 and len(parts[1]) > 3:
-                            cleaned = parts[1]  # отбрасываем служебный префикс вроде ZH
+                            cleaned = parts[1]
                         data.first_name = cleaned
                         if self.debug:
-                            print(f"✅ Найдено имя: {data.first_name}")
+                            print(f"✅ Имя: {data.first_name}")
                         break
 
-        # Доп. эвристика: если имя все ещё пустое, берем латиницу из текста без служебных слов
-        if not data.first_name:
-            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-            latin_lines = []
-            for ln in lines:
-                cleaned = self._normalize_token(ln)
-                if not cleaned or len(cleaned) < 2 or len(cleaned) > 30:
-                    continue
-                up = cleaned.upper()
-                if any(x in up for x in ["PASSPORT", "KAZ", "NATIONALITY", "MINISTRY"]):
-                    continue
-                if up == (data.last_name or "").upper():
-                    continue
-                latin_lines.append(cleaned)
-            if latin_lines:
-                data.first_name = latin_lines[0]
-                if self.debug:
-                    print(f"✅ Имя по латинице из текста: {data.first_name}")
-
-        # Доп. fallback для фамилии: ищем любую подходящую строку, если ещё пусто
-        if not data.last_name:
-            for ln in text.splitlines():
-                cleaned = self._normalize_token(ln)
-                if not cleaned or len(cleaned) < 4 or len(cleaned) > 25:
-                    continue
-                up = cleaned.upper()
-                if any(x in up for x in ["PASSPORT", "KAZ", "NATIONALITY", "MINISTRY", "GIVEN", "SURNAME"]):
-                    continue
-                if data.first_name and up == data.first_name.upper():
-                    continue
-                parts = cleaned.split()
-                if len(parts) > 1 and len(parts[-1]) <= 2:
-                    cleaned = " ".join(parts[:-1])
-                data.last_name = cleaned
-                if self.debug:
-                    print(f"✅ Фамилия (fallback): {data.last_name}")
-                break
-
-        # ВАЖНО: Проверяем, не попали ли оба имени в одно поле
-        if data.last_name and not data.first_name:
-            # Если в фамилии несколько слов, возможно там и имя тоже
-            if len(data.last_name.split()) > 1:
-                if self.debug:
-                    print(f"⚠️ Обнаружено несколько слов в фамилии: {data.last_name}")
-                # Применяем умное разделение
-                split_last, split_first = self._smart_name_split(data.last_name)
-                if split_first:  # Если удалось разделить
-                    data.last_name = split_last
-                    data.first_name = split_first
-                    if self.debug:
-                        print(f"✅ После разделения - Фамилия: {data.last_name}, Имя: {data.first_name}")
-
-        elif data.first_name and not data.last_name:
-            # Если имя есть, а фамилии нет - возможно все в имени
-            if len(data.first_name.split()) > 1:
-                if self.debug:
-                    print(f"⚠️ Обнаружено несколько слов в имени: {data.first_name}")
-                split_last, split_first = self._smart_name_split(data.first_name)
-                data.last_name = split_last
-                data.first_name = split_first
-                if self.debug:
-                    print(f"✅ После разделения - Фамилия: {data.last_name}, Имя: {data.first_name}")
-
-        # 5. ДАТЫ
-        # Дата рождения
+        # ДАТЫ
         if not data.dob:
             dob_patterns = [
                 r'(?:ТУҒАН\s*КҮНІ|Date\s*of\s*birth|Дата\s*рождения)[\s:]*(\d{2}[./]\d{2}[./]\d{4})',
-                r'(?:Born|Родился)[\s:]*(\d{2}[./]\d{2}[./]\d{4})',
-                r'(\d{2}\.\d{2}\.\d{4})',  # Просто формат даты
+                r'(\d{2}\.\d{2}\.\d{4})',
             ]
 
             for pattern in dob_patterns:
@@ -1018,8 +792,7 @@ class PassportParser:
 
         # Срок действия
         exp_patterns = [
-            r'(?:МЕРЗІМ(?:І)?|ЖАРАМДЫ\s*ДО|Expiry|Expires|Valid\s*(?:until|to)|Date\s*of\s*Expiry|Действителен\s*до)[^\d]*(\d{2}\s*[./-]\s*\d{2}\s*[./-]\s*\d{4})',
-            r'(?:Valid\s*until)[\s:]*(\d{2}\s*[./-]\s*\d{2}\s*[./-]\s*\d{4})',
+            r'(?:МЕРЗІМ(?:І)?|ЖАРАМДЫ\s*ДО|Expiry|Expires|Valid\s*(?:until|to)|Date\s*of\s*Expiry)[^\d]*(\d{2}\s*[./-]\s*\d{2}\s*[./-]\s*\d{4})',
             r'(?:до\s*)(\d{2}\s*[./-]\s*\d{2}\s*[./-]\s*\d{4})',
         ]
 
@@ -1031,111 +804,70 @@ class PassportParser:
                     print(f"✅ Срок действия: {data.expiration_date}")
                 break
 
-        # 6. MRZ OVERRIDE (самый точный источник имен после транслитерации)
+        # MRZ OVERRIDE
         mrz_data = self.parse_mrz(text, mrz_specialized_text)
 
-        # Используем MRZ если он не пустой (теперь там всегда латиница после транслитерации)
-        use_mrz = False
         if mrz_data.get("last_name"):
             mrz_last = mrz_data["last_name"]
             mrz_first = mrz_data.get("first_name", "")
 
-            # Сохраняем для словаря (чтобы фронт брал латиницу)
             data.mrz_last_name = mrz_last
             data.mrz_first_name = mrz_first
 
-            # Проверяем качество MRZ: есть ли в нем хотя бы 2 буквы
             if len(mrz_last) >= 2 and mrz_last.replace(" ", "").isalpha():
-                use_mrz = True
+                def should_replace(text_val: str, mrz_val: str, mrz_had_issues: bool = False) -> bool:
+                    if not mrz_val:
+                        return False
+                    mrz_q = self._name_quality(mrz_val)
+                    text_q = self._name_quality(text_val)
 
-                # Если MRZ есть, используем его как приоритетный источник имен
-                if mrz_last and not mrz_first and len(mrz_last.split()) > 1:
+                    if not text_val:
+                        return True
+                    if self._contains_cyrillic(text_val):
+                        return True
+                    if self._looks_like_noise_name(text_val):
+                        return True
+
+                    if not mrz_had_issues and mrz_q >= 4:
+                        return True
+
+                    if mrz_had_issues and text_q >= 4:
+                        return False
+
+                    return mrz_q > text_q + 2
+
+                mrz_last_had_issues = mrz_data.get("last_had_issues", False)
+                mrz_first_had_issues = mrz_data.get("first_had_issues", False)
+
+                if should_replace(data.last_name, mrz_last, mrz_last_had_issues):
+                    data.last_name = mrz_last
                     if self.debug:
-                        print(f"⚠️ MRZ: Несколько слов в фамилии: {mrz_last}")
-                    split_last, split_first = self._smart_name_split(mrz_last)
+                        print(f"✅ Фамилия (MRZ): {data.last_name}")
+
+                if should_replace(data.first_name, mrz_first, mrz_first_had_issues):
+                    data.first_name = mrz_first
+                    if self.debug:
+                        print(f"✅ Имя (MRZ): {data.first_name}")
+
+        # Проверяем, не попали ли оба имени в одно поле
+        if data.last_name and not data.first_name:
+            if len(data.last_name.split()) > 1:
+                split_last, split_first = self._smart_name_split(data.last_name)
+                if split_first:
                     data.last_name = split_last
                     data.first_name = split_first
                     if self.debug:
-                        print(f"✅ MRZ после разделения - Фамилия: {data.last_name}, Имя: {data.first_name}")
-                else:
-                    # Решаем, чем заменить: MRZ или текст, чтобы не потерять верные текстовые имена
-                    def should_replace(text_val: str, mrz_val: str, mrz_had_issues: bool = False) -> bool:
-                        if not mrz_val:
-                            return False
-                        mrz_q = self._name_quality(mrz_val)
-                        text_q = self._name_quality(text_val)
-                        similar = self._are_similar_words(mrz_val.replace(" ", ""), (text_val or "").replace(" ", ""))
+                        print(f"✅ После разделения - Фамилия: {data.last_name}, Имя: {data.first_name}")
 
-                        if not text_val:
-                            return True
-                        if self._contains_cyrillic(text_val):
-                            return True
-                        if self._looks_like_noise_name(text_val):
-                            return True
-
-                        # КЛЮЧЕВОЕ ПРАВИЛО 1: Если MRZ БЕЗ ошибок (чистая латиница) - ОБЫЧНО используем MRZ!
-                        # НО проверяем: возможно текст это более короткая и правильная версия
-                        if not mrz_had_issues:
-                            if mrz_q >= 4:  # MRZ качественный (минимум 4 буквы)
-                                # Дополнительная проверка: если текст короче MRZ и очень похож,
-                                # возможно в MRZ лишние символы (ошибка OCR)
-                                if text_q >= 4 and len(text_val) < len(mrz_val):
-                                    # Проверяем: MRZ содержит текст как подстроку (с небольшими отличиями)
-                                    mrz_clean = mrz_val.replace(" ", "").upper()
-                                    text_clean = text_val.replace(" ", "").upper()
-
-                                    # Если текст является частью MRZ или очень похож (расстояние <= 1)
-                                    if text_clean in mrz_clean or self._levenshtein_distance(text_clean, mrz_clean) == 1:
-                                        if self.debug:
-                                            print(f"   ⚠️  MRZ содержит лишние символы, текст точнее: {text_val}")
-                                        return False
-
-                                if self.debug:
-                                    print(f"   ✅ MRZ чистый (без ошибок OCR), используем его: {mrz_val}")
-                                return True
-
-                        # КЛЮЧЕВОЕ ПРАВИЛО 2: Если MRZ был с ошибками OCR (кириллица/цифры),
-                        # а текст чистый латинский и качественный - предпочитаем текст
-                        if mrz_had_issues and text_q >= 4:  # минимум 4 буквы в тексте
-                            if self.debug:
-                                print(f"   ⚠️  MRZ был с ошибками OCR, используем чистый текст: {text_val}")
-                            return False
-
-                        # Дополнительная эвристика: если слова очень похожи и MRZ немного лучше
-                        if similar and mrz_q > text_q:
-                            if self.debug:
-                                print(f"   ℹ️  Слова похожи, но MRZ качественнее: {mrz_val}")
-                            return True
-
-                        # Если не похожи, требуем значительного преимущества MRZ
-                        if not similar and mrz_q >= text_q + 2:
-                            return True
-
-                        return False
-
-                    mrz_last_had_issues = mrz_data.get("last_had_issues", False)
-                    mrz_first_had_issues = mrz_data.get("first_had_issues", False)
-
-                    if should_replace(data.last_name, mrz_last, mrz_last_had_issues):
-                        data.last_name = mrz_last
-                        if self.debug:
-                            print(f"✅ Фамилия (MRZ): {data.last_name}")
-                    else:
-                        if self.debug and data.last_name:
-                            print(f"✅ Фамилия (текст): {data.last_name}")
-
-                    if should_replace(data.first_name, mrz_first, mrz_first_had_issues):
-                        data.first_name = mrz_first
-                        if self.debug:
-                            print(f"✅ Имя (MRZ): {data.first_name}")
-                    else:
-                        if self.debug and data.first_name:
-                            print(f"✅ Имя (текст): {data.first_name}")
-            else:
+        elif data.first_name and not data.last_name:
+            if len(data.first_name.split()) > 1:
+                split_last, split_first = self._smart_name_split(data.first_name)
+                data.last_name = split_last
+                data.first_name = split_first
                 if self.debug:
-                    print(f"⚠️ MRZ фамилия некачественная: '{mrz_last}'")
+                    print(f"✅ После разделения - Фамилия: {data.last_name}, Имя: {data.first_name}")
 
-        # Если текстовые поля всё ещё на кириллице — транслитерируем
+        # Транслитерация кириллицы
         if self._contains_cyrillic(data.last_name):
             old_last = data.last_name
             data.last_name = self._transliterate(data.last_name)
@@ -1148,28 +880,14 @@ class PassportParser:
             if self.debug:
                 print(f"🔄 Транслитерация имени: {old_first} → {data.first_name}")
 
-        # Убираем служебные слова/мусор после всех замен
+        # Убираем служебные слова
         data.last_name = self._remove_noise_tokens(data.last_name)
         data.first_name = self._remove_noise_tokens(data.first_name)
 
         if mrz_data.get("document_number"):
             data.document_number = mrz_data["document_number"]
-            if self.debug:
-                print(f"✅ Номер документа (MRZ): {data.document_number}")
         if mrz_data.get("expiration_date"):
             data.expiration_date = mrz_data["expiration_date"]
-            if self.debug:
-                print(f"✅ Срок действия (MRZ): {data.expiration_date}")
-
-        if not data.expiration_date:
-            generic_matches = re.findall(r'(\d{2}(?:\s*[./-]\s*|\s+)\d{2}(?:\s*[./-]\s*|\s+)\d{4})', text)
-            for match in reversed(generic_matches):
-                cleaned = self._clean_date(match)
-                if cleaned and cleaned != data.dob:
-                    data.expiration_date = cleaned
-                    if self.debug:
-                        print(f"✅ Срок действия (fallback): {data.expiration_date}")
-                    break
 
         if self.debug:
             print("="*60)
