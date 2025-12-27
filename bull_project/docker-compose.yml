@@ -9,6 +9,8 @@ services:
       - db
     environment:
       - DATABASE_URL=postgresql+asyncpg://bull:password@db:5432/bull_db
+      - PASSPORT_ENGINE=easyocr
+      - POPPLER_PATH=/usr/bin
 
   db:
     image: postgres:15-alpine
