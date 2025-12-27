@@ -20,8 +20,7 @@ from bull_project.bull_bot.config.constants import (
 from bull_project.bull_bot.config.keyboards import (
     cancel_kb, get_menu_by_role, main_menu_kb, manager_kb
 )
-from bull_project.bull_bot.core.parsers.passport_parser import PassportParser
-from bull_project.bull_bot.core.parsers.passport_parser_easyocr import PassportParserEasyOCR
+from bull_project.bull_bot.core.parsers.passport_parser import PassportParser, PassportParserEasyOCR
 from bull_project.bull_bot.database.requests import (
     add_user, get_user_role, add_booking_to_db, add_4u_request, get_admin_ids,
     update_booking_row, delete_user, get_user_by_id, get_booking_by_id, mark_booking_cancelled
