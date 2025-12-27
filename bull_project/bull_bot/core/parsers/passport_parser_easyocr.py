@@ -4,8 +4,14 @@
 """
 
 import easyocr
-from passporteye import read_mrz
 from PIL import Image
+# passporteye - опциональная зависимость для MRZ
+try:
+    from passporteye import read_mrz
+    HAS_PASSPORTEYE = True
+except ImportError:
+    HAS_PASSPORTEYE = False
+    read_mrz = None
 from pdf2image import convert_from_path
 import re
 from dataclasses import dataclass
@@ -174,6 +180,11 @@ class PassportParserEasyOCR:
 
     def extract_mrz_passporteye(self, file_path: str) -> Optional[dict]:
         """Извлечение MRZ с PassportEye"""
+        if not HAS_PASSPORTEYE:
+            if self.debug:
+                print("⚠️ PassportEye не установлен, пропускаем MRZ")
+            return None
+
         try:
             if file_path.lower().endswith('.pdf'):
                 pages = convert_from_path(file_path, dpi=300, poppler_path=self.poppler_path)
