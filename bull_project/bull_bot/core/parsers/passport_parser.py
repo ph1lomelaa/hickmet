@@ -120,7 +120,7 @@ class PassportParserEasyOCR:
             return ""
 
     def extract_text_easyocr(self, file_path: str) -> str:
-        """Извлечение текста с EasyOCR"""
+        """Извлечение текста с EasyOCR с автоповоротом"""
         temp_file = None
         try:
             # Конвертируем PDF в изображение
@@ -143,8 +143,47 @@ class PassportParserEasyOCR:
                 file_path = temp_jpg
                 temp_file = temp_jpg
 
-            # EasyOCR
+            # EasyOCR на оригинальном изображении
             result = self.reader.readtext(file_path)
+
+            # Проверка качества распознавания
+            valid_texts = [text for (bbox, text, confidence) in result if confidence > 0.3 and len(text) > 2]
+
+            # Если распознано мало текста (<5 слов), пробуем повернуть
+            if len(valid_texts) < 5:
+                if self.debug:
+                    print(f"⚠️ Мало текста распознано ({len(valid_texts)} слов), пробуем повороты...")
+
+                best_result = result
+                best_count = len(valid_texts)
+                best_rotation = 0
+
+                # Пробуем повороты
+                img = Image.open(file_path)
+                for rotation in [90, 180, 270]:
+                    # Поворачиваем
+                    rotated_img = img.rotate(rotation, expand=True)
+                    rotated_path = file_path.rsplit('.', 1)[0] + f'_rot{rotation}.jpg'
+                    rotated_img.save(rotated_path, 'JPEG', quality=95)
+
+                    # Распознаем
+                    rotated_result = self.reader.readtext(rotated_path)
+                    rotated_valid = [text for (bbox, text, confidence) in rotated_result if confidence > 0.3 and len(text) > 2]
+
+                    # Удаляем временный файл
+                    os.remove(rotated_path)
+
+                    # Если лучше - сохраняем
+                    if len(rotated_valid) > best_count:
+                        best_result = rotated_result
+                        best_count = len(rotated_valid)
+                        best_rotation = rotation
+                        if self.debug:
+                            print(f"  ✅ Поворот {rotation}° лучше: {len(rotated_valid)} слов")
+
+                result = best_result
+                if best_rotation > 0 and self.debug:
+                    print(f"🔄 Использован поворот {best_rotation}°")
 
             # Удаляем временный файл
             if temp_file and os.path.exists(temp_file):
@@ -390,7 +429,8 @@ class PassportParserEasyOCR:
         # Фамилия - ищем латиницу после английского слова или перед именем
 
         # Паттерн 1 (ПРИОРИТЕТ): MRZ строка (самый надежный источник, с учетом пробелов)
-        mrz_surname = re.search(r'([A-Z]{4,})<[\s<]*([A-Z]{4,})', text)
+        # Формат MRZ: P<CCC<SURNAME<<FIRSTNAME где CCC - код страны (3 буквы)
+        mrz_surname = re.search(r'P<[A-Z]{3}([A-Z]+)<[\s<]*([A-Z]+)', text)
         if mrz_surname:
             surname = mrz_surname.group(1)
             firstname = mrz_surname.group(2)
