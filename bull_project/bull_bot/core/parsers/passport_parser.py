@@ -383,28 +383,28 @@ class PassportParserEasyOCR:
 
         # Фамилия - ищем латиницу после английского слова или перед именем
 
-        # Паттерн 1: Узбекские паспорта (FAMILIYASI/SURNAME, ISMI/GIVEN NAMES)
-        uzb_surname = re.search(r'(?:FAMILIYASI|SURNAME)[^\n]*\n\s*([A-Z]+)', text, re.IGNORECASE)
-        uzb_firstname = re.search(r'(?:ISMI|GIVEN NAMES)[^\n]*\n\s*([A-Z]+)', text, re.IGNORECASE)
-        if uzb_surname and uzb_firstname:
-            surname = uzb_surname.group(1)
-            firstname = uzb_firstname.group(1)
+        # Паттерн 1 (ПРИОРИТЕТ): MRZ строка (самый надежный источник)
+        mrz_surname = re.search(r'([A-Z]{4,})<+([A-Z]{4,})', text)
+        if mrz_surname:
+            surname = mrz_surname.group(1)
+            firstname = mrz_surname.group(2)
+            # Проверяем, что это не мусор
             if surname not in EXCLUDE_WORDS and firstname not in EXCLUDE_WORDS:
                 data.last_name = surname
                 data.first_name = firstname
 
-        # Паттерн 2: После MRZ строки (казахские паспорта)
+        # Паттерн 2: Узбекские паспорта (FAMILIYASI/SURNAME, ISMI/GIVEN NAMES)
         if not data.last_name:
-            mrz_surname = re.search(r'([A-Z]{4,})<+([A-Z]{4,})', text)
-            if mrz_surname:
-                surname = mrz_surname.group(1)
-                firstname = mrz_surname.group(2)
-                # Проверяем, что это не мусор
+            uzb_surname = re.search(r'(?:FAMILIYASI|SURNAME)[^\n]*\n\s*([A-Z]+)', text, re.IGNORECASE)
+            uzb_firstname = re.search(r'(?:ISMI|GIVEN NAMES)[^\n]*\n\s*([A-Z]+)', text, re.IGNORECASE)
+            if uzb_surname and uzb_firstname:
+                surname = uzb_surname.group(1)
+                firstname = uzb_firstname.group(1)
                 if surname not in EXCLUDE_WORDS and firstname not in EXCLUDE_WORDS:
                     data.last_name = surname
                     data.first_name = firstname
 
-        # Паттерн 3: Обычный текст
+        # Паттерн 3: Обычный текст (последний приоритет)
         if not data.last_name:
             lines = text.split('\n')
             for i, line in enumerate(lines):
