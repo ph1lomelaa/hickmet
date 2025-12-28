@@ -27,7 +27,7 @@ def test_mrz(mrz_line, expected_surname, expected_firstname, case_name):
     if mrz_surname:
         surname_raw = mrz_surname.group(1)
         firstname = mrz_surname.group(2)
-        surname = re.sub(r'[<\s]+', ' ', surname_raw).strip()
+        surname = re.sub(r'[<\s]+', '', surname_raw).strip()
 
         print(f"✅ Распознано: Фамилия='{surname}', Имя='{firstname}'")
 
@@ -56,10 +56,10 @@ test_mrz(
     "Узбекский паспорт (с пробелами после имени)"
 )
 
-# Тест 3: Казахский паспорт с пробелами в фамилии
+# Тест 3: Казахский паспорт с пробелами в фамилии (склеиваются в одно слово)
 test_mrz(
     "P <KAZAKHME J ANOV<<KENES<<<<<<<<<<<<<<<<<<<<< <",
-    "AKHME J ANOV", "KENES",
+    "AKHMEJANOV", "KENES",
     "Казахский паспорт (фамилия с пробелами и OCR артефактами)"
 )
 

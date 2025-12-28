@@ -38,8 +38,8 @@ if mrz_surname:
     print(f"   Сырая фамилия: '{surname_raw}'")
     print(f"   Имя: '{firstname}'")
 
-    # Очищаем фамилию: заменяем < и множественные пробелы на один пробел
-    surname = re.sub(r'[<\s]+', ' ', surname_raw).strip()
+    # Очищаем фамилию: удаляем < и пробелы полностью (AKHME J ANOV -> AKHMEJANOV)
+    surname = re.sub(r'[<\s]+', '', surname_raw).strip()
 
     print(f"\n🔄 После очистки:")
     print(f"   Фамилия: '{surname}'")
@@ -49,13 +49,13 @@ if mrz_surname:
     if surname and firstname and surname not in EXCLUDE_WORDS and firstname not in EXCLUDE_WORDS:
         print(f"\n✅ Проверка пройдена - не служебные слова")
 
-        if surname == "AKHME J ANOV" and firstname == "KENES":
+        if surname == "AKHMEJANOV" and firstname == "KENES":
             print("\n🎉 УСПЕХ! Правильно распознано:")
             print(f"   Фамилия: {surname}")
             print(f"   Имя: {firstname}")
         else:
             print(f"\n⚠️ Получили: '{surname}' и '{firstname}'")
-            print(f"   Ожидалось: 'AKHME J ANOV' и 'KENES'")
+            print(f"   Ожидалось: 'AKHMEJANOV' и 'KENES'")
     else:
         print(f"\n❌ Отклонено - служебные слова или пустое значение")
 else:

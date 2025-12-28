@@ -443,8 +443,8 @@ class PassportParserEasyOCR:
             surname_raw = mrz_surname.group(1)
             firstname = mrz_surname.group(2)
 
-            # Очищаем фамилию: заменяем < и множественные пробелы на один пробел
-            surname = re.sub(r'[<\s]+', ' ', surname_raw).strip()
+            # Очищаем фамилию: удаляем < и пробелы полностью (AKHME J ANOV -> AKHMEJANOV)
+            surname = re.sub(r'[<\s]+', '', surname_raw).strip()
 
             # Проверяем, что это не мусор
             if surname and firstname and surname not in EXCLUDE_WORDS and firstname not in EXCLUDE_WORDS:
