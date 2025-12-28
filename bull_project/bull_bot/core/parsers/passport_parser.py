@@ -485,8 +485,9 @@ class PassportParserEasyOCR:
         if self.debug:
             print(f"\n🔍 Парсинг файла: {file_path}")
 
-        # 1. PassportEye для MRZ
-        mrz_data = self.extract_mrz_passporteye(file_path)
+        # 1. PassportEye ОТКЛЮЧЕН (потребляет много памяти и дает мусорные данные)
+        # mrz_data = self.extract_mrz_passporteye(file_path)
+        mrz_data = None
 
         # 2. EasyOCR для текста
         text = self.extract_text_easyocr(file_path)
