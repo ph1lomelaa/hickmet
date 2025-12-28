@@ -661,3 +661,4 @@ def test_easyocr_parser(file_path: str):
 
 # Алиас для обратной совместимости
 PassportParser = PassportParserEasyOCR
+
