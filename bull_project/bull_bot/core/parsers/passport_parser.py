@@ -429,13 +429,25 @@ class PassportParserEasyOCR:
         # Фамилия - ищем латиницу после английского слова или перед именем
 
         # Паттерн 1 (ПРИОРИТЕТ): MRZ строка (самый надежный источник, с учетом пробелов)
-        # Формат MRZ: P<CCC<SURNAME<<FIRSTNAME где CCC - код страны (3 буквы)
-        mrz_surname = re.search(r'P<[A-Z]{3}([A-Z]+)<[\s<]*([A-Z]+)', text)
+        # Формат MRZ: P<CCC<SURNAME_PARTS<<FIRSTNAME где CCC - код страны (3 буквы)
+        # Фамилия может содержать несколько частей: AKHME<J<ANOV или с пробелами AKHME J ANOV
+
+        # Попытка 1: Полная MRZ строка с префиксом P<CCC
+        mrz_surname = re.search(r'P\s*<\s*[A-Z]{3}\s*<?\s*([A-Z\s<]+?)<<\s*([A-Z]+)', text)
+
+        # Попытка 2: MRZ без префикса (для случаев обрезанного текста)
+        if not mrz_surname:
+            mrz_surname = re.search(r'([A-Z]{4,})<[\s<]*([A-Z]{4,})', text)
+
         if mrz_surname:
-            surname = mrz_surname.group(1)
+            surname_raw = mrz_surname.group(1)
             firstname = mrz_surname.group(2)
+
+            # Очищаем фамилию: заменяем < и множественные пробелы на один пробел
+            surname = re.sub(r'[<\s]+', ' ', surname_raw).strip()
+
             # Проверяем, что это не мусор
-            if surname not in EXCLUDE_WORDS and firstname not in EXCLUDE_WORDS:
+            if surname and firstname and surname not in EXCLUDE_WORDS and firstname not in EXCLUDE_WORDS:
                 data.last_name = surname
                 data.first_name = firstname
 
