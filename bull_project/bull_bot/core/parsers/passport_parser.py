@@ -389,8 +389,8 @@ class PassportParserEasyOCR:
 
         # Фамилия - ищем латиницу после английского слова или перед именем
 
-        # Паттерн 1 (ПРИОРИТЕТ): MRZ строка (самый надежный источник)
-        mrz_surname = re.search(r'([A-Z]{4,})<+([A-Z]{4,})', text)
+        # Паттерн 1 (ПРИОРИТЕТ): MRZ строка (самый надежный источник, с учетом пробелов)
+        mrz_surname = re.search(r'([A-Z]{4,})<[\s<]*([A-Z]{4,})', text)
         if mrz_surname:
             surname = mrz_surname.group(1)
             firstname = mrz_surname.group(2)
