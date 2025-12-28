@@ -4,9 +4,15 @@
 """
 
 import easyocr
-from passporteye import read_mrz
 from PIL import Image
 from pdf2image import convert_from_path
+# passporteye удален (потребляет много памяти)
+try:
+    from passporteye import read_mrz
+    HAS_PASSPORTEYE = True
+except ImportError:
+    HAS_PASSPORTEYE = False
+    read_mrz = None
 import re
 from dataclasses import dataclass
 from datetime import datetime
