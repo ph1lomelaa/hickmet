@@ -432,7 +432,7 @@ class PassportParserEasyOCR:
         # Формат MRZ: P<CCC<SURNAME_PARTS<<FIRSTNAME где CCC - код страны (3 буквы)
         # Фамилия может содержать несколько частей: AKHME<J<ANOV или с пробелами AKHME J ANOV
 
-        # Попытка 1: Полная MRZ строка с префиксом P<CCC
+        # Попытка 1: Полная MRZ строка с префиксом P<CCC (код страны отделен)
         mrz_surname = re.search(r'P\s*<\s*[A-Z]{3}\s*<?\s*([A-Z\s<]+?)<<\s*([A-Z]+)', text)
 
         # Попытка 2: MRZ без префикса (для случаев обрезанного текста)
@@ -445,6 +445,15 @@ class PassportParserEasyOCR:
 
             # Очищаем фамилию: удаляем < и пробелы полностью (AKHME J ANOV -> AKHMEJANOV)
             surname = re.sub(r'[<\s]+', '', surname_raw).strip()
+
+            # Удаляем код страны ТОЛЬКО если в тексте явно есть префикс P<KAZ или P <KAZ
+            # Это защищает от ложных срабатываний (фамилия KAZAKOV останется KAZAKOV)
+            if re.search(r'P\s*<\s*(UZB|KAZ|KGZ|TJK|TKM|RUS|BLR|ARM|GEO|AZE)', text):
+                country_codes = ['UZB', 'KAZ', 'KGZ', 'TJK', 'TKM', 'RUS', 'BLR', 'ARM', 'GEO', 'AZE']
+                for code in country_codes:
+                    if surname.startswith(code):
+                        surname = surname[len(code):]
+                        break
 
             # Проверяем, что это не мусор
             if surname and firstname and surname not in EXCLUDE_WORDS and firstname not in EXCLUDE_WORDS:
