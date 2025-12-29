@@ -17,13 +17,14 @@ def care_kb():
     """Меню для Отдела Заботы"""
     from aiogram.types import WebAppInfo
 
+    CARE_BOOKINGS_URL = "https://ph1lomelaa.github.io/book/admin-bookings.html"
     CARE_SEARCH_URL = "https://ph1lomelaa.github.io/book/search-pilgrim.html"
-    CARE_LISTS_URL = "https://ph1lomelaa.github.io/book/package-lists.html"
+    CARE_PACKAGES_URL = "https://ph1lomelaa.github.io/book/package-lists.html"
 
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 Список броней", web_app=WebAppInfo(url=CARE_LISTS_URL))],
+        [InlineKeyboardButton(text="📋 Список броней", web_app=WebAppInfo(url=CARE_BOOKINGS_URL))],
         [InlineKeyboardButton(text="🔎 Найти паломника", web_app=WebAppInfo(url=CARE_SEARCH_URL))],
-        [InlineKeyboardButton(text="📞 Сбор номеров телефонов", web_app=WebAppInfo(url=f"{CARE_LISTS_URL}#phones"))],
+        [InlineKeyboardButton(text="📦 Списки по пакетам", web_app=WebAppInfo(url=CARE_PACKAGES_URL))],
     ])
 
 def admin_kb():
