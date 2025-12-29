@@ -18,8 +18,11 @@ from bull_project.bull_bot.core.google_sheets.writer import (
 )
 from bull_project.bull_bot.config.keyboards import get_menu_by_role, kb_select_table
 from bull_project.bull_bot.handlers.booking_handlers import BookingFlow
+from bull_project.bull_bot.handlers.booking_handlers import send_webapp_link
 
 router = Router()
+# user_id -> booking_id ожидает подтверждения текстом "YES"
+_CANCEL_PENDING: dict[int, int] = {}
 
 
 @router.callback_query(F.data.startswith("reschedule:"))
@@ -208,6 +211,10 @@ async def view_booking_card(call: CallbackQuery):
             callback_data=f"cancel_ask:{b.id}"
         )],
         [InlineKeyboardButton(
+            text="✏️ ИЗМЕНИТЬ",
+            callback_data=f"edit:{b.id}"
+        )],
+        [InlineKeyboardButton(
             text="♻️ ПЕРЕНЕСТИ БРОНЬ",
             callback_data=f"reschedule:{b.id}"
         )],
@@ -232,11 +239,10 @@ async def ask_cancel(call: CallbackQuery):
         await call.answer("Бронь не найдена", show_alert=True)
         return
     
+    # Сохраняем ожидание "YES"
+    _CANCEL_PENDING[call.from_user.id] = int(bid)
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="⚠️ ДА, ОТМЕНИТЬ БРОНЬ",
-            callback_data=f"cancel_confirm:{bid}"
-        )],
         [InlineKeyboardButton(
             text="🔙 Вернуться",
             callback_data=f"view_booking:{bid}"
@@ -245,13 +251,12 @@ async def ask_cancel(call: CallbackQuery):
     
     text = (
         f"⚠️ <b>ВНИМАНИЕ! ОТМЕНА БРОНИРОВАНИЯ</b>\n\n"
-        f"Вы уверены, что хотите отменить бронь для:\n"
-        f"<b>{b.guest_last_name} {b.guest_first_name}</b>?\n\n"
+        f"Бронь: <b>{b.guest_last_name} {b.guest_first_name}</b>\n\n"
         f"<i>Это действие:</i>\n"
         f"• Очистит данные из Google Таблицы\n"
         f"• Запишет отмену красным цветом\n"
         f"• Пометит бронь как отмененную в базе\n\n"
-        f"Отменить бронь?"
+        f"Для подтверждения отправьте ответом слово <b>YES</b>."
     )
     
     await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
@@ -326,3 +331,121 @@ async def process_cancel(call: CallbackQuery):
         reply_markup=get_menu_by_role(role),
         parse_mode="HTML"
     )
+
+# === ИЗМЕНЕНИЕ БРОНИ ===
+@router.callback_query(F.data.startswith("edit:"))
+async def start_edit(call: CallbackQuery, state: FSMContext):
+    """Старт редактирования брони: отправляем данные в WebApp в режиме edit."""
+    booking_id = int(call.data.split(":")[1])
+    b = await get_booking_by_id(booking_id)
+
+    if not b:
+        await call.answer("Бронь не найдена", show_alert=True)
+        return
+
+    # Собираем данные паломника в формате, ожидаемом webapp
+    pilgrim = {
+        "Last Name": b.guest_last_name or "-",
+        "First Name": b.guest_first_name or "-",
+        "Gender": b.gender or "M",
+        "Date of Birth": b.date_of_birth or "-",
+        "Document Number": b.passport_num or "-",
+        "Document Expiration": b.passport_expiry or "-",
+        "IIN": b.guest_iin or "-",
+        "client_phone": b.client_phone or "-",
+        "passport_image_path": b.passport_image_path or None
+    }
+
+    # Сохраняем состояние для webapp
+    await state.update_data(
+        is_edit=True,
+        edit_booking_id=booking_id,
+        pilgrims_list=[pilgrim],
+        current_sheet_id=b.table_id,
+        current_sheet_name=b.sheet_name,
+        selected_pkg_name=b.package_name,
+        room=b.room_type or "-",
+        meal=b.meal_type or "-",
+        price=b.price or "0",
+        amount_paid=b.amount_paid or "0",
+        exchange_rate=b.exchange_rate or "-",
+        discount=b.discount or "-",
+        contract=b.contract_number or "-",
+        region=b.region or "-",
+        departure_city=b.departure_city or "-",
+        source=b.source or "Edit",
+        comment=b.comment or "-",
+        train=b.train or "-",
+        manager_name_text=b.manager_name_text or "-"
+    )
+
+    await call.message.answer(
+        f"✏️ Редактирование брони #{booking_id}\nОткрываю форму...",
+        parse_mode="HTML"
+    )
+    await send_webapp_link(call.message, state)
+    await call.answer()
+
+# === ТЕКСТОВОЕ ПОДТВЕРЖДЕНИЕ "YES" ===
+@router.message(F.text)
+async def cancel_by_yes(message: CallbackQuery | any):
+    # Фильтруем только текстовые сообщения "yes"/"YES"
+    if not hasattr(message, "text"):
+        return
+    if message.text.strip().lower() != "yes":
+        return
+
+    user_id = message.from_user.id
+    booking_id = _CANCEL_PENDING.get(user_id)
+    if not booking_id:
+        return
+
+    b = await get_booking_by_id(booking_id)
+    if not b:
+        await message.answer("❌ Бронь не найдена.")
+        _CANCEL_PENDING.pop(user_id, None)
+        return
+
+    await message.answer(
+        "⏳ Обработка отмены...\nПожалуйста, подождите.",
+        parse_mode="HTML"
+    )
+
+    # Повторяем логику process_cancel
+    sheets_cleared = False
+    if b.sheet_row_number and b.table_id and b.sheet_name:
+        sheets_cleared = await clear_booking_in_sheets(
+            b.table_id,
+            b.sheet_name,
+            b.sheet_row_number,
+            b.package_name
+        )
+
+    red_written = False
+    if b.table_id and b.sheet_name and b.package_name:
+        guest_name = f"{b.guest_last_name} {b.guest_first_name}"
+        red_written = await write_cancelled_booking_red(
+            b.table_id,
+            b.sheet_name,
+            b.package_name,
+            guest_name
+        )
+
+    await mark_booking_cancelled(booking_id)
+
+    status_parts = []
+    status_parts.append("✅ Данные очищены из таблицы" if sheets_cleared else "⚠️ Не удалось очистить данные (очистите вручную)")
+    status_parts.append("✅ Отмена записана красным цветом" if red_written else "⚠️ Не удалось записать отмену красным")
+    status_parts.append("✅ Бронь помечена как отмененная в системе")
+
+    role = await get_user_role(user_id)
+    await message.answer(
+        f"🗑 <b>БРОНЬ #{booking_id} ОТМЕНЕНА</b>\n\n"
+        f"<b>Паломник:</b> {b.guest_last_name} {b.guest_first_name}\n"
+        f"<b>Пакет:</b> {b.package_name}\n\n"
+        f"<b>Статус операции:</b>\n" + "\n".join(f"• {s}" for s in status_parts),
+        reply_markup=get_menu_by_role(role),
+        parse_mode="HTML"
+    )
+
+    _CANCEL_PENDING.pop(user_id, None)

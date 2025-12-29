@@ -41,7 +41,11 @@ from bull_project.bull_bot.database.requests import (
     get_db_packages_list,
     get_all_bookings_in_package
 )
-from bull_project.bull_bot.database.requests import get_latest_passport_for_person
+from bull_project.bull_bot.database.requests import (
+    get_latest_passport_for_person,
+    update_booking_fields,
+    update_booking_passport_path
+)
 from bull_project.bull_bot.core.google_sheets.writer import (
     clear_booking_in_sheets,
     write_cancelled_booking_red
@@ -167,6 +171,29 @@ class BookingSubmitIn(BaseModel):
     placement_type: str = "separate"
     specific_row: Optional[int] = None
     manager_id: Optional[int] = None
+
+
+class BookingUpdateIn(BaseModel):
+    pilgrims: List[PilgrimData] = []
+    package_name: Optional[str] = None
+    sheet_name: Optional[str] = None
+    table_id: Optional[str] = None
+    departure_city: Optional[str] = None
+    room_type: Optional[str] = None
+    meal_type: Optional[str] = None
+    visa_status: Optional[str] = None
+    avia: Optional[str] = None
+    price: Optional[str] = None
+    amount_paid: Optional[str] = None
+    contract_number: Optional[str] = None
+    exchange_rate: Optional[str] = None
+    discount: Optional[str] = None
+    source: Optional[str] = None
+    region: Optional[str] = None
+    train: Optional[str] = None
+    manager_name_text: Optional[str] = None
+    comment: Optional[str] = None
+    specific_row: Optional[int] = None
 
 # -----------------------------------------------------------------------------
 # API ENDPOINTS
@@ -390,9 +417,9 @@ async def api_bookings_submit(payload: BookingSubmitIn):
         "placement_type": payload.placement_type or "separate",
     }
 
-    # 4. Формирование данных для Google Sheets и БД
+    # 4. Формирование данных для Google Sheets
     group_data_for_sheets: List[Dict[str, Any]] = []
-    db_ids: List[int] = []
+    db_records: List[Dict[str, Any]] = []  # 🔥 Храним данные для БД, но не записываем сразу
 
     for pilgrim in payload.pilgrims:
         # Данные для Sheets
@@ -411,7 +438,7 @@ async def api_bookings_submit(payload: BookingSubmitIn):
         group_data_for_sheets.append(p_sheet_data)
 
         # Логирование данных для Sheets
-        print(f"📄 Отправка в Sheets для {pilgrim.last_name}:")
+        print(f"📄 Подготовка данных для Sheets ({pilgrim.last_name}):")
         print(f"   Last Name: {p_sheet_data['Last Name']}")
         print(f"   First Name: {p_sheet_data['First Name']}")
         print(f"   Gender: {p_sheet_data['Gender']}")
@@ -419,11 +446,11 @@ async def api_bookings_submit(payload: BookingSubmitIn):
         print(f"   Doc Number: {p_sheet_data['Document Number']}")
         print(f"   IIN: {p_sheet_data['IIN']}")
 
-        # Данные для БД
+        # 🔥 ИЗМЕНЕНИЕ: Подготавливаем данные для БД, но НЕ записываем
         record_db = {
             "table_id": payload.table_id,
             "sheet_name": sheet_name,
-            "sheet_row_number": None,
+            "sheet_row_number": None,  # Будет проставлено после записи в Sheets
             "package_name": package_name,
             "region": common["region"],
             "departure_city": common["departure_city"],
@@ -453,24 +480,14 @@ async def api_bookings_submit(payload: BookingSubmitIn):
             "passport_image_path": pilgrim.passport_image_path or None,
             "status": "new",
         }
+        db_records.append(record_db)
 
-        # Логирование данных для БД
-        print(f"\n💾 Сохранение в БД для {pilgrim.last_name}:")
-        print(f"   guest_last_name: {record_db['guest_last_name']}")
-        print(f"   guest_first_name: {record_db['guest_first_name']}")
-        print(f"   gender: {record_db['gender']}")
-        print(f"   date_of_birth: {record_db['date_of_birth']}")
-        print(f"   passport_num: {record_db['passport_num']}")
-        print(f"   guest_iin: {record_db['guest_iin']}")
+        print(f"📝 Данные для БД подготовлены для {pilgrim.last_name}")
 
-        # Сохраняем в БД
-        booking_id = await add_booking_to_db(record_db, manager_id)
-        db_ids.append(booking_id)
-        print(f"✅ ID записи в БД: {booking_id}\n")
-
-    # 5. Запись в Google Sheets
+    # 5. 🔥 СНАЧАЛА запись в Google Sheets
     saved_rows = []
     try:
+        print(f"\n📊 Запись в Google Sheets...")
         saved_rows = await save_group_booking(
             group_data=group_data_for_sheets,
             common_data=common,
@@ -479,7 +496,7 @@ async def api_bookings_submit(payload: BookingSubmitIn):
             is_share=False,
         )
 
-        print(f"\n✅ Записано в Google Sheets, строки: {saved_rows}")
+        print(f"✅ Записано в Google Sheets, строки: {saved_rows}")
 
     except Exception as e:
         print(f"❌ Ошибка записи в Sheets: {e}")
@@ -490,28 +507,37 @@ async def api_bookings_submit(payload: BookingSubmitIn):
             status_code=500,
             content={
                 "ok": False,
-                "error": f"Записано в БД, но ошибка Sheets: {e}",
-                "db_ids": db_ids,
+                "error": f"Ошибка записи в Google Sheets: {e}",
                 "saved_rows": [],
             },
         )
 
+    # 🔥 ПРОВЕРКА: Если в Sheets не записалось - НЕ записываем в БД
     if not saved_rows:
+        print(f"⚠️ Место не найдено в Google Sheets - бронь НЕ будет сохранена в БД")
         return JSONResponse(
             status_code=409,
             content={
                 "ok": False,
                 "error": "Место не найдено (Sheets). Попробуйте другой тип номера.",
-                "db_ids": db_ids,
                 "saved_rows": [],
             },
         )
 
-    # 6. Обновляем row_number в БД
-    for i, row in enumerate(saved_rows):
-        if i < len(db_ids):
-            await update_booking_row(db_ids[i], row)
-            print(f"📌 Строка {row} для записи БД ID {db_ids[i]}")
+    # 6. 🔥 ТОЛЬКО ЕСЛИ записалось в Sheets - записываем в БД
+    db_ids: List[int] = []
+    for i, record_db in enumerate(db_records):
+        # Проставляем номер строки из Google Sheets
+        if i < len(saved_rows):
+            record_db["sheet_row_number"] = saved_rows[i]
+
+        print(f"\n💾 Сохранение в БД для {record_db['guest_last_name']}:")
+        print(f"   sheet_row_number: {record_db['sheet_row_number']}")
+        print(f"   passport_num: {record_db['passport_num']}")
+
+        booking_id = await add_booking_to_db(record_db, manager_id)
+        db_ids.append(booking_id)
+        print(f"✅ ID записи в БД: {booking_id}")
 
     print("\n" + "="*60)
     print("✅ ЗАПРОС УСПЕШНО ОБРАБОТАН")
@@ -619,6 +645,170 @@ async def api_passport_upload(file: UploadFile = File(...)):
         return {"ok": True, "path": target_path}
     except Exception as e:
         print(f"❌ Ошибка загрузки паспорта от бота: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": str(e)}
+        )
+
+
+@app.patch("/api/bookings/{booking_id}")
+async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
+    """
+    Обновление существующей брони (редактирование)
+    """
+    try:
+        print(f"\n✏️ Запрос на обновление брони #{booking_id}")
+
+        # Получаем текущую бронь
+        booking = await get_booking_by_id(booking_id)
+        if not booking:
+            return JSONResponse(
+                status_code=404,
+                content={"ok": False, "error": "Бронь не найдена"}
+            )
+
+        # Формируем обновленные данные
+        update_fields = {}
+
+        # Обновляем данные паломника если переданы
+        if payload.pilgrims and len(payload.pilgrims) > 0:
+            p = payload.pilgrims[0]  # Берем первого паломника
+            if p.last_name: update_fields['guest_last_name'] = p.last_name
+            if p.first_name: update_fields['guest_first_name'] = p.first_name
+            if p.gender: update_fields['gender'] = p.gender
+            if p.date_of_birth: update_fields['date_of_birth'] = p.date_of_birth
+            if p.passport_num: update_fields['passport_num'] = p.passport_num
+            if p.passport_expiry: update_fields['passport_expiry'] = p.passport_expiry
+            if p.iin: update_fields['guest_iin'] = p.iin
+            if p.phone: update_fields['client_phone'] = p.phone
+
+            # Обновляем фото паспорта если передано
+            if p.passport_image_path:
+                await update_booking_passport_path(booking_id, p.passport_image_path)
+
+        # Обновляем общие поля
+        if payload.package_name: update_fields['package_name'] = payload.package_name
+        if payload.sheet_name: update_fields['sheet_name'] = payload.sheet_name
+        if payload.table_id: update_fields['table_id'] = payload.table_id
+        if payload.departure_city: update_fields['departure_city'] = payload.departure_city
+        if payload.room_type: update_fields['room_type'] = payload.room_type
+        if payload.meal_type: update_fields['meal_type'] = payload.meal_type
+        if payload.visa_status: update_fields['visa_status'] = payload.visa_status
+        if payload.avia: update_fields['avia'] = payload.avia
+        if payload.price: update_fields['price'] = payload.price
+        if payload.amount_paid: update_fields['amount_paid'] = payload.amount_paid
+        if payload.contract_number: update_fields['contract_number'] = payload.contract_number
+        if payload.exchange_rate: update_fields['exchange_rate'] = payload.exchange_rate
+        if payload.discount: update_fields['discount'] = payload.discount
+        if payload.source: update_fields['source'] = payload.source
+        if payload.region: update_fields['region'] = payload.region
+        if payload.train: update_fields['train'] = payload.train
+        if payload.manager_name_text: update_fields['manager_name_text'] = payload.manager_name_text
+        if payload.comment: update_fields['comment'] = payload.comment
+
+        # Обновляем в БД
+        await update_booking_fields(booking_id, update_fields)
+
+        print(f"✅ Бронь #{booking_id} успешно обновлена в БД")
+        print(f"   Обновлено полей: {len(update_fields)}")
+
+        # 🔥 ОБНОВЛЕНИЕ GOOGLE SHEETS
+        sheets_updated = False
+        if booking.sheet_row_number and booking.table_id and booking.sheet_name:
+            try:
+                from bull_project.bull_bot.core.google_sheets.client import get_google_client, get_sheet_data
+                from bull_project.bull_bot.core.google_sheets.allocator import find_headers_extended, find_package_row
+                from bull_project.bull_bot.core.google_sheets.writer import get_worksheet_by_title, row_col_to_a1
+
+                print(f"📝 Обновление Google Sheets (строка {booking.sheet_row_number})")
+
+                client = get_google_client()
+                if client:
+                    ss = client.open_by_key(booking.table_id)
+                    ws = get_worksheet_by_title(ss, booking.sheet_name)
+                    all_values = ws.get_all_values()
+
+                    # Находим заголовки колонок в пакете
+                    pkg_row = find_package_row(all_values, booking.package_name)
+                    cols = None
+                    if pkg_row is not None:
+                        for r in range(pkg_row, min(pkg_row + 30, len(all_values))):
+                            cols = find_headers_extended(all_values[r])
+                            if cols:
+                                break
+
+                    if cols:
+                        # Формируем обновления для Google Sheets
+                        updates = []
+                        row_num = booking.sheet_row_number
+
+                        # Обновляем данные паломника
+                        if 'guest_last_name' in update_fields and 'last_name' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['last_name'] + 1)}",
+                                          'values': [[update_fields['guest_last_name']]]})
+                        if 'guest_first_name' in update_fields and 'first_name' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['first_name'] + 1)}",
+                                          'values': [[update_fields['guest_first_name']]]})
+                        if 'gender' in update_fields and 'gender' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['gender'] + 1)}",
+                                          'values': [[update_fields['gender']]]})
+                        if 'date_of_birth' in update_fields and 'dob' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['dob'] + 1)}",
+                                          'values': [[update_fields['date_of_birth']]]})
+                        if 'passport_num' in update_fields and 'doc_num' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['doc_num'] + 1)}",
+                                          'values': [[update_fields['passport_num']]]})
+                        if 'passport_expiry' in update_fields and 'doc_exp' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['doc_exp'] + 1)}",
+                                          'values': [[update_fields['passport_expiry']]]})
+                        if 'guest_iin' in update_fields and 'iin' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['iin'] + 1)}",
+                                          'values': [[update_fields['guest_iin']]]})
+                        if 'client_phone' in update_fields and 'client_phone' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['client_phone'] + 1)}",
+                                          'values': [[update_fields['client_phone']]]})
+
+                        # Обновляем общие поля
+                        if 'price' in update_fields and 'price' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['price'] + 1)}",
+                                          'values': [[update_fields['price']]]})
+                        if 'comment' in update_fields and 'comment' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['comment'] + 1)}",
+                                          'values': [[update_fields['comment']]]})
+                        if 'manager_name_text' in update_fields and 'manager' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['manager'] + 1)}",
+                                          'values': [[update_fields['manager_name_text']]]})
+                        if 'train' in update_fields and 'train' in cols:
+                            updates.append({'range': f"{row_col_to_a1(row_num, cols['train'] + 1)}",
+                                          'values': [[update_fields['train']]]})
+
+                        # Применяем обновления
+                        if updates:
+                            ws.batch_update(updates)
+                            sheets_updated = True
+                            print(f"✅ Google Sheets обновлен ({len(updates)} полей)")
+                        else:
+                            print(f"⚠️ Нет полей для обновления в Google Sheets")
+                    else:
+                        print(f"⚠️ Не найдены заголовки колонок для пакета {booking.package_name}")
+            except Exception as e:
+                print(f"⚠️ Ошибка обновления Google Sheets: {e}")
+                import traceback
+                traceback.print_exc()
+                # Продолжаем даже если обновление Sheets не удалось
+
+        return {
+            "ok": True,
+            "booking_id": booking_id,
+            "updated_fields": len(update_fields),
+            "sheets_updated": sheets_updated,
+            "message": "Бронь успешно обновлена"
+        }
+
+    except Exception as e:
+        print(f"❌ Ошибка обновления брони: {e}")
         import traceback
         traceback.print_exc()
         return JSONResponse(

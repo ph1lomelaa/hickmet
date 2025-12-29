@@ -87,6 +87,24 @@ async def mark_booking_rescheduled(booking_id: int, comment: str = None):
                 b.comment = comment
             await session.commit()
 
+async def update_booking_fields(booking_id: int, fields: dict):
+    """Обновляет указанные поля брони"""
+    async with async_session() as session:
+        b = await session.get(Booking, booking_id)
+        if b:
+            for key, value in fields.items():
+                if hasattr(b, key):
+                    setattr(b, key, value)
+            await session.commit()
+
+async def update_booking_passport_path(booking_id: int, passport_path: str):
+    """Обновляет путь к файлу паспорта"""
+    async with async_session() as session:
+        b = await session.get(Booking, booking_id)
+        if b:
+            b.passport_image_path = passport_path
+            await session.commit()
+
 # === ИСТОРИЯ И ПОИСК ===
 
 async def get_manager_packages(manager_id: int):

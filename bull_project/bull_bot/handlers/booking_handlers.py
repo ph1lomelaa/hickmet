@@ -32,6 +32,27 @@ router = Router()
 # Ссылка на твой фронтенд
 WEB_APP_URL = "https://ph1lomelaa.github.io/book/index.html"
 
+# Импортируем API_BASE_URL из констант
+from bull_project.bull_bot.config.constants import API_BASE_URL
+
+# Хелпер функция для добавления api_url
+def get_webapp_url(extra_params: dict = None) -> str:
+    """
+    Возвращает WebApp URL с параметром api_url для локального тестирования
+    """
+    params = extra_params or {}
+
+    # Добавляем API URL если он установлен (для локального тестирования)
+    if API_BASE_URL:
+        params["api_url"] = API_BASE_URL
+        print(f"🌐 DEBUG: Добавлен api_url = {API_BASE_URL}")
+    else:
+        print(f"⚠️  DEBUG: API_BASE_URL пустой! Используется production")
+
+    final_url = f"{WEB_APP_URL}?{urllib.parse.urlencode(params)}" if params else WEB_APP_URL
+    print(f"🔗 DEBUG: WebApp URL = {final_url[:100]}...")
+    return final_url
+
 # ==================== ПОЛНЫЙ КЛАСС СОСТОЯНИЙ (FSM) ====================
 class BookingFlow(StatesGroup):
     waiting_access_code = State()
@@ -522,7 +543,20 @@ async def send_webapp_link(message: Message, state: FSMContext):
         print(f"    Путь к паспорту: {p.get('passport_image_path')}")
 
     params = {"pilgrims": json.dumps(p_full_data, ensure_ascii=False)}
-    url = f"{WEB_APP_URL}?{urllib.parse.urlencode(params)}"
+
+    # 🔥 ИСПРАВЛЕНИЕ: Передаем режим работы (edit/reschedule) и ID брони
+    if data.get('is_edit') and data.get('edit_booking_id'):
+        params['mode'] = 'edit'
+        params['booking_id'] = str(data['edit_booking_id'])
+        print(f"✏️ Режим: РЕДАКТИРОВАНИЕ (booking_id={data['edit_booking_id']})")
+    elif data.get('is_reschedule') and data.get('old_booking_id'):
+        params['mode'] = 'reschedule'
+        params['old_booking_id'] = str(data['old_booking_id'])
+        print(f"♻️ Режим: ПЕРЕНОС (old_booking_id={data['old_booking_id']})")
+    else:
+        print(f"➕ Режим: СОЗДАНИЕ новой брони")
+
+    url = get_webapp_url(params)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Заполнить форму", web_app=WebAppInfo(url=url))],
@@ -544,7 +578,41 @@ async def handle_webapp_data(message: Message, state: FSMContext):
     # Проверяем, это новая автономная Web App или старая форма
     if form.get("action") == "booking_completed":
         # Это событие от новой Web App (index.html)
-        await message.answer("✅ Бронь успешно создана!")
+
+        # 🔥 ИСПРАВЛЕНИЕ: Проверяем режим переноса и отменяем старую бронь
+        data = await state.get_data()
+        mode = form.get("mode")
+        old_booking_id = data.get('old_booking_id')
+
+        success_msg = "✅ Бронь успешно создана!"
+
+        if mode == "reschedule" and old_booking_id:
+            print(f"\n♻️ ПЕРЕНОС: Отмена старой брони #{old_booking_id} (через WebApp)")
+            try:
+                old_booking = await get_booking_by_id(old_booking_id)
+                if old_booking:
+                    # 1. Очищаем старую строку в Google Sheets
+                    if old_booking.sheet_row_number and old_booking.table_id and old_booking.sheet_name:
+                        print(f"📝 Очистка строки {old_booking.sheet_row_number} из старой таблицы")
+                        await clear_booking_in_sheets(
+                            old_booking.table_id,
+                            old_booking.sheet_name,
+                            old_booking.sheet_row_number,
+                            old_booking.package_name
+                        )
+
+                    # 2. Помечаем старую бронь как отмененную в БД
+                    await mark_booking_cancelled(old_booking_id)
+                    print(f"✅ Старая бронь #{old_booking_id} отменена")
+                    success_msg = f"✅ Перенос завершен успешно!\n• Старая бронь #{old_booking_id} отменена"
+            except Exception as e:
+                print(f"⚠️ Ошибка при отмене старой брони: {e}")
+                import traceback
+                traceback.print_exc()
+        elif mode == "edit":
+            success_msg = "✅ Изменения успешно сохранены!"
+
+        await message.answer(success_msg)
 
         # Возвращаем в главное меню
         user_id = message.from_user.id
@@ -632,7 +700,11 @@ async def finalize_booking_integrated(message: Message, state: FSMContext, pilgr
             print(f"    Телефон: {p.get('client_phone', 'НЕТ')}")
             print(f"    Путь к фото: {p.get('passport_image_path', 'НЕТ')}")
 
-        # --- 1. Запись КАЖДОГО паломника в БД ---
+        # --- 1. Подготовка данных для Google Sheets ---
+        # Google Sheets ожидает данные в формате паспортного парсера
+        sheets_pilgrims = []
+        db_records = []  # 🔥 Храним данные для БД, но не записываем сразу
+
         for p in pilgrims:
             # Собираем ВСЕ данные паспорта
             last_name = p.get("Last Name") or p.get("guest_last_name") or "-"
@@ -644,10 +716,25 @@ async def finalize_booking_integrated(message: Message, state: FSMContext, pilgr
             iin = p.get("IIN") or "-"
             client_phone = p.get("client_phone") or "-"
 
+            # Данные для Sheets
+            sheets_pilgrim = {
+                "Last Name": last_name,
+                "First Name": first_name,
+                "Gender": gender if gender != "-" else "M",
+                "Date of Birth": dob,
+                "Document Number": passport_num,
+                "Document Expiration": passport_expiry,
+                "IIN": iin,
+                "client_phone": client_phone,
+                "passport_image_path": p.get("passport_image_path"),
+            }
+            sheets_pilgrims.append(sheets_pilgrim)
+
+            # 🔥 ИЗМЕНЕНИЕ: Подготавливаем данные для БД, но НЕ записываем
             full_db_record = {
                 "table_id": common["table_id"],
                 "sheet_name": common["sheet_name"],
-                "sheet_row_number": None,
+                "sheet_row_number": None,  # Будет проставлено после записи в Sheets
 
                 "package_name": common["package_name"],
                 "region": common["region"],
@@ -683,36 +770,12 @@ async def finalize_booking_integrated(message: Message, state: FSMContext, pilgr
                 "passport_image_path": p.get("passport_image_path"),
                 "status": "new",
             }
+            db_records.append(full_db_record)
 
-            # ДЕБАГ: Выводим запись для проверки
-            print(f"📝 Запись в БД для {last_name} {first_name}:")
-            print(f"   - passport_num: {full_db_record['passport_num']}")
-            print(f"   - guest_iin: {full_db_record['guest_iin']}")
-            print(f"   - date_of_birth: {full_db_record['date_of_birth']}")
-            print(f"   - passport_image_path: {full_db_record['passport_image_path']}")
+            print(f"📝 Данные подготовлены для {last_name} {first_name}")
 
-            booking_id = await add_booking_to_db(full_db_record, message.from_user.id)
-            db_ids.append(booking_id)
-            print(f"✅ ID записи в БД: {booking_id}")
-
-        # --- 2. Подготовка данных для Google Sheets ---
-        # Google Sheets ожидает данные в формате паспортного парсера
-        sheets_pilgrims = []
-        for p in pilgrims:
-            sheets_pilgrim = {
-                "Last Name": p.get("Last Name") or p.get("guest_last_name") or "-",
-                "First Name": p.get("First Name") or p.get("guest_first_name") or "-",
-                "Gender": p.get("Gender") or p.get("gender") or "M",
-                "Date of Birth": p.get("Date of Birth") or p.get("date_of_birth") or "-",
-                "Document Number": p.get("Document Number") or p.get("passport_num") or "-",
-                "Document Expiration": p.get("Document Expiration") or p.get("passport_expiry") or "-",
-                "IIN": p.get("IIN") or "-",
-                "client_phone": p.get("client_phone") or "-",
-                "passport_image_path": p.get("passport_image_path"),
-            }
-            sheets_pilgrims.append(sheets_pilgrim)
-
-        # --- 3. Запись всех паломников в Google Sheets ---
+        # --- 2. 🔥 СНАЧАЛА запись в Google Sheets ---
+        print(f"\n📊 Запись в Google Sheets...")
         saved_rows = await save_group_booking(
             sheets_pilgrims,               # group_data с паспортными данными
             common,                        # common_data
@@ -723,7 +786,9 @@ async def finalize_booking_integrated(message: Message, state: FSMContext, pilgr
 
         await status.delete()
 
+        # 🔥 ПРОВЕРКА: Если в Sheets не записалось - НЕ записываем в БД
         if not saved_rows:
+            print(f"⚠️ Место не найдено в Google Sheets - бронь НЕ будет сохранена в БД")
             user = await get_user_by_id(message.from_user.id)
             await message.answer(
                 "⚠️ Не найдено мест в Google Sheets. Проверь пакет / тип номера / блок.",
@@ -732,18 +797,63 @@ async def finalize_booking_integrated(message: Message, state: FSMContext, pilgr
             await state.clear()
             return
 
-        # --- 4. Проставляем номера строк в БД ---
-        for i, row in enumerate(saved_rows):
-            if i < len(db_ids):
-                await update_booking_row(db_ids[i], row)
-                print(f"📌 Строка {row} для записи БД ID {db_ids[i]}")
+        # --- 3. 🔥 ТОЛЬКО ЕСЛИ записалось в Sheets - записываем в БД ---
+        db_ids = []
+        for i, full_db_record in enumerate(db_records):
+            # Проставляем номер строки из Google Sheets
+            if i < len(saved_rows):
+                full_db_record["sheet_row_number"] = saved_rows[i]
+
+            print(f"\n💾 Сохранение в БД для {full_db_record['guest_last_name']}:")
+            print(f"   - sheet_row_number: {full_db_record['sheet_row_number']}")
+            print(f"   - passport_num: {full_db_record['passport_num']}")
+            print(f"   - guest_iin: {full_db_record['guest_iin']}")
+
+            booking_id = await add_booking_to_db(full_db_record, message.from_user.id)
+            db_ids.append(booking_id)
+            print(f"✅ ID записи в БД: {booking_id}")
+
+        # 🔥 ИСПРАВЛЕНИЕ: Обработка режима переноса - отменяем старую бронь
+        data = await state.get_data()
+        is_reschedule = data.get('is_reschedule', False)
+        old_booking_id = data.get('old_booking_id')
+
+        if is_reschedule and old_booking_id:
+            print(f"\n♻️ ПЕРЕНОС: Отмена старой брони #{old_booking_id}")
+            try:
+                old_booking = await get_booking_by_id(old_booking_id)
+                if old_booking:
+                    # 1. Очищаем старую строку в Google Sheets
+                    if old_booking.sheet_row_number and old_booking.table_id and old_booking.sheet_name:
+                        print(f"📝 Очистка строки {old_booking.sheet_row_number} из старой таблицы")
+                        await clear_booking_in_sheets(
+                            old_booking.table_id,
+                            old_booking.sheet_name,
+                            old_booking.sheet_row_number,
+                            old_booking.package_name
+                        )
+
+                    # 2. Помечаем старую бронь как отмененную в БД
+                    await mark_booking_cancelled(old_booking_id)
+                    print(f"✅ Старая бронь #{old_booking_id} отменена")
+            except Exception as e:
+                print(f"⚠️ Ошибка при отмене старой брони: {e}")
+                # Продолжаем даже если отмена не удалась
 
         user = await get_user_by_id(message.from_user.id)
-        await message.answer(
-            f"✅ Бронь успешно записана!\n"
+        success_msg = "✅ Бронь успешно записана!\n"
+        if is_reschedule:
+            success_msg = "✅ Перенос завершен успешно!\n"
+        success_msg += (
             f"• Записано паломников: {len(pilgrims)}\n"
             f"• Строки в таблице: {saved_rows}\n"
-            f"• ID записей в БД: {db_ids}",
+            f"• ID записей в БД: {db_ids}"
+        )
+        if is_reschedule and old_booking_id:
+            success_msg += f"\n• Старая бронь #{old_booking_id} отменена"
+
+        await message.answer(
+            success_msg,
             reply_markup=get_menu_by_role(user.role) if user else manager_kb(),
         )
         await state.clear()
@@ -905,7 +1015,7 @@ async def test_form(message: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="📝 ТЕСТОВАЯ ФОРМА",
-            web_app=WebAppInfo(url=WEB_APP_URL)
+            web_app=WebAppInfo(url=get_webapp_url())
         )]
     ])
     await message.answer("Нажмите для открытия формы:", reply_markup=kb)
