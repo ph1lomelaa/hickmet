@@ -19,6 +19,7 @@ from bull_project.bull_bot.core.google_sheets.client import (
     get_sheet_data,
     get_accessible_tables,
     get_sheet_names,
+    get_packages_from_sheet,
 )
 from bull_project.bull_bot.core.google_sheets.writer import save_group_booking
 from bull_project.bull_bot.database.setup import init_db
@@ -44,11 +45,18 @@ from bull_project.bull_bot.database.requests import (
 from bull_project.bull_bot.database.requests import (
     get_latest_passport_for_person,
     update_booking_fields,
-    update_booking_passport_path
+    update_booking_passport_path,
+    get_pending_requests,
+    get_approval_request,
+    update_approval_status,
+    create_approval_request,
+    mark_booking_rescheduled
 )
 from bull_project.bull_bot.core.google_sheets.writer import (
     clear_booking_in_sheets,
-    write_cancelled_booking_red
+    write_cancelled_booking_red,
+    write_rescheduled_booking_red,
+    save_group_booking
 )
 from bull_project.bull_bot.config.constants import ABS_UPLOADS_DIR
 # uploads dir is shared via volume on API service
@@ -1201,6 +1209,194 @@ async def get_all_bookings(
 
 
 # -----------------------------------------------------------------------------
+# ADMIN REQUESTS (pending cancel/reschedule)
+# -----------------------------------------------------------------------------
+
+@app.get("/api/admin/requests")
+async def admin_requests():
+    try:
+        pending = await get_pending_requests()
+        result = []
+        for req in pending:
+            booking = await get_booking_by_id(req.booking_id)
+            if not booking:
+                continue
+            result.append({
+                "id": req.id,
+                "booking_id": booking.id,
+                "request_type": req.request_type,
+                "status": req.status,
+                "created_at": req.created_at.isoformat() if req.created_at else None,
+                "initiator_id": req.initiator_id,
+                "comment": req.comment,
+                "booking": {
+                    "package_name": booking.package_name,
+                    "sheet_name": booking.sheet_name,
+                    "table_id": booking.table_id,
+                    "sheet_row_number": booking.sheet_row_number,
+                    "guest_last_name": booking.guest_last_name,
+                    "guest_first_name": booking.guest_first_name,
+                    "client_phone": booking.client_phone,
+                    "placement_type": booking.placement_type,
+                    "room_type": booking.room_type,
+                    "meal_type": booking.meal_type,
+                    "price": booking.price,
+                    "amount_paid": booking.amount_paid,
+                    "region": booking.region,
+                    "departure_city": booking.departure_city,
+                    "source": booking.source,
+                    "comment": booking.comment,
+                    "manager_name_text": booking.manager_name_text
+                }
+            })
+        return {"ok": True, "data": result}
+    except Exception as e:
+        print(f"❌ Ошибка /api/admin/requests: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+
+@app.post("/api/admin/requests/{req_id}/approve")
+async def admin_request_approve(req_id: int):
+    try:
+        req = await get_approval_request(req_id)
+        if not req or req.status != "pending":
+            return JSONResponse(status_code=404, content={"ok": False, "error": "not found"})
+        booking = await get_booking_by_id(req.booking_id)
+        if not booking:
+            return JSONResponse(status_code=404, content={"ok": False, "error": "booking not found"})
+
+        if req.request_type == "cancel":
+            # Выполняем отмену
+            sheets_cleared = False
+            if booking.sheet_row_number and booking.table_id and booking.sheet_name:
+                sheets_cleared = await clear_booking_in_sheets(
+                    booking.table_id,
+                    booking.sheet_name,
+                    booking.sheet_row_number,
+                    booking.package_name
+                )
+            red_written = False
+            if booking.table_id and booking.sheet_name and booking.package_name:
+                guest_name = f"{booking.guest_last_name} {booking.guest_first_name}"
+                red_written = await write_cancelled_booking_red(
+                    booking.table_id,
+                    booking.sheet_name,
+                    booking.package_name,
+                    guest_name
+                )
+            await mark_booking_cancelled(booking.id)
+            await update_approval_status(req_id, "approved")
+            return {"ok": True, "status": "cancelled", "sheets_cleared": sheets_cleared, "red_written": red_written}
+
+        elif req.request_type == "reschedule":
+            # comment old:<id>
+            old_id = None
+            if req.comment and req.comment.startswith("old:"):
+                try:
+                    old_id = int(req.comment.split("old:")[1])
+                except:
+                    old_id = None
+            old_booking = await get_booking_by_id(old_id) if old_id else None
+
+            # Запись новой брони
+            common_data = {
+                'table_id': booking.table_id,
+                'sheet_name': booking.sheet_name,
+                'package_name': booking.package_name,
+                'room_type': booking.room_type,
+                'meal_type': booking.meal_type,
+                'price': booking.price,
+                'amount_paid': booking.amount_paid,
+                'exchange_rate': booking.exchange_rate,
+                'discount': booking.discount,
+                'contract_number': booking.contract_number,
+                'region': booking.region,
+                'departure_city': booking.departure_city,
+                'source': booking.source,
+                'comment': booking.comment,
+                'manager_name_text': booking.manager_name_text,
+                'train': booking.train,
+                'visa_status': booking.visa_status,
+                'avia': booking.avia,
+            }
+            person = {
+                "Last Name": booking.guest_last_name,
+                "First Name": booking.guest_first_name,
+                "Gender": booking.gender,
+                "Date of Birth": booking.date_of_birth,
+                "Document Number": booking.passport_num,
+                "Document Expiration": booking.passport_expiry,
+                "IIN": booking.guest_iin,
+                "client_phone": booking.client_phone,
+                "passport_image_path": booking.passport_image_path
+            }
+            saved_rows = await save_group_booking([person], common_data, booking.placement_type or 'separate')
+            if saved_rows:
+                await update_booking_row(booking.id, saved_rows[0])
+                await update_booking_fields(booking.id, {"status": "new"})
+            else:
+                return JSONResponse(status_code=500, content={"ok": False, "error": "sheet write failed"})
+
+            # Старая бронь
+            if old_booking:
+                if old_booking.sheet_row_number and old_booking.table_id and old_booking.sheet_name:
+                    try:
+                        await clear_booking_in_sheets(old_booking.table_id, old_booking.sheet_name, old_booking.sheet_row_number, old_booking.package_name)
+                    except:
+                        pass
+                try:
+                    guest_name = f"{old_booking.guest_last_name} {old_booking.guest_first_name}"
+                    await write_rescheduled_booking_red(old_booking.table_id, old_booking.sheet_name, old_booking.package_name, guest_name)
+                except:
+                    pass
+                await mark_booking_rescheduled(old_booking.id, comment=f"Перенесено в #{booking.id}")
+
+            await update_approval_status(req_id, "approved")
+            return {"ok": True, "status": "rescheduled", "saved_rows": saved_rows}
+
+        else:
+            return JSONResponse(status_code=400, content={"ok": False, "error": "unknown type"})
+    except Exception as e:
+        print(f"❌ Ошибка approve: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+
+@app.post("/api/admin/requests/{req_id}/reject")
+async def admin_request_reject(req_id: int):
+    try:
+        req = await get_approval_request(req_id)
+        if not req or req.status != "pending":
+            return JSONResponse(status_code=404, content={"ok": False, "error": "not found"})
+        booking = await get_booking_by_id(req.booking_id)
+        if req.request_type == "reschedule":
+            old_id = None
+            if req.comment and req.comment.startswith("old:"):
+                try:
+                    old_id = int(req.comment.split("old:")[1])
+                except:
+                    old_id = None
+            if booking:
+                await update_booking_fields(booking.id, {"status": "cancelled"})
+            if old_id:
+                await update_booking_fields(old_id, {"status": "new"})
+        else:
+            # cancel reject -> вернуть new
+            if booking:
+                await update_booking_fields(booking.id, {"status": "new"})
+        await update_approval_status(req_id, "rejected")
+        return {"ok": True, "status": "rejected"}
+    except Exception as e:
+        print(f"❌ Ошибка reject: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+
+# -----------------------------------------------------------------------------
 # CARE DEPARTMENT ENDPOINTS (Отдел Заботы)
 # -----------------------------------------------------------------------------
 
@@ -1401,7 +1597,14 @@ async def get_packages_by_date_for_care(
     try:
         print(f"📋 Care Packages: table_id={table_id}, sheet_name={sheet_name}")
 
-        packages = await get_db_packages_list(table_id, sheet_name)
+        # Сначала пробуем прочитать актуальные пакеты напрямую из Google Sheet
+        packages_map = get_packages_from_sheet(table_id, sheet_name)
+        packages = list(packages_map.values()) if packages_map else []
+
+        # Если из таблицы ничего не нашли (например, проблемы с форматами),
+        # пробуем достать из БД как фолбэк.
+        if not packages:
+            packages = await get_db_packages_list(table_id, sheet_name)
 
         return {
             "ok": True,

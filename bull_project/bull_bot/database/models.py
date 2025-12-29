@@ -75,3 +75,23 @@ class Booking(Base):
 
     status = Column(String, default="new") # new, cancelled
     created_at = Column(DateTime, default=datetime.now)
+
+
+class AdminSettings(Base):
+    __tablename__ = 'admin_settings'
+    admin_id = Column(BigInteger, primary_key=True)  # telegram_id админа
+    notify_new = Column(Integer, default=0)          # 0/1
+    notify_cancel = Column(Integer, default=0)
+    notify_reschedule = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class ApprovalRequest(Base):
+    __tablename__ = 'approval_requests'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    booking_id = Column(Integer, ForeignKey('bookings.id'))
+    request_type = Column(String)  # cancel | reschedule
+    initiator_id = Column(BigInteger, ForeignKey('users.telegram_id'))
+    status = Column(String, default="pending")  # pending | approved | rejected
+    created_at = Column(DateTime, default=datetime.now)
+    comment = Column(Text, nullable=True)  # для reschedule можно хранить old_booking_id

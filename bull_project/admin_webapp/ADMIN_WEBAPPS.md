@@ -83,7 +83,7 @@ def admin_kb():
 # 4. Получите URLs:
 # https://username.github.io/admin-panel.html
 # https://username.github.io/admin-bookings.html
-# https://username.github.io/admin-create-booking.html
+# https://ph1lomelaa.github.io/admin-requests.html
 ```
 
 **Или Netlify:**

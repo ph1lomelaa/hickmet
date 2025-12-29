@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Админ — заявки</title>
+  <style>
+    :root {
+      --bg: #FAF8F5; --card: #FFFFFF; --border: #E8E3DC;
+      --accent: #9B8474; --accent-dark: #6B5D52; --text: #3D3935; --muted: #8A827C;
+    }
+    body { font-family:'Inter',sans-serif; background:var(--bg); padding:16px; color:var(--text); }
+    h2 { color: var(--accent-dark); margin-bottom: 12px; }
+    .card { background:var(--card); border:2px solid var(--border); border-radius:16px; padding:14px; margin-bottom:14px; box-shadow:0 8px 20px rgba(107,93,82,0.12); }
+    .header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:8px; }
+    .title { font-size:16px; font-weight:700; color:var(--accent-dark); }
+    .meta { font-size:13px; color:var(--muted); }
+    .status { padding:6px 12px; border-radius:12px; font-size:12px; font-weight:700; background:#FFE8E0; color:#9B2C20; }
+    .section { margin-top:10px; }
+    .section h4 { margin:0 0 6px; font-size:12px; font-weight:700; color:var(--accent-dark); text-transform:uppercase; letter-spacing:.4px; }
+    .row { display:flex; justify-content:space-between; gap:10px; font-size:14px; margin:3px 0; }
+    .label { color:var(--muted); }
+    .value { font-weight:700; }
+    .badge { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; background:#F1EFEA; color:var(--accent-dark); font-weight:700; margin:6px 0; }
+    .note { background:#F8F6F2; border:1px solid var(--border); border-radius:12px; padding:10px; color:var(--text); }
+    .actions { display:flex; gap:10px; margin-top:12px; }
+    .btn { flex:1; padding:12px; border-radius:12px; border:none; font-weight:700; cursor:pointer; }
+    .ok { background:linear-gradient(135deg,#71C562 0%,#3F8E46 100%); color:#FFF; box-shadow:0 6px 14px rgba(63,142,70,0.25); }
+    .neutral { background:#FFF; border:2px solid var(--border); color:var(--muted); }
+    .empty { padding:16px; border:2px dashed var(--border); border-radius:14px; color:var(--muted); text-align:center; }
+  </style>
+</head>
+<body>
+  <h2>Заявки на отмену/перенос</h2>
+  <div id="list"></div>
+
+  <script>
+    const API_URL = window.location.origin.replace(/\/admin_webapp.*/, "") || "";
+
+    async function loadRequests() {
+      const container = document.getElementById('list');
+      container.innerHTML = "⏳ Загружаю...";
+      try {
+        const res = await fetch(`${API_URL}/api/admin/requests`);
+        const json = await res.json();
+        if (!json.ok || !json.data || !json.data.length) {
+          container.innerHTML = '<div class="empty">Нет заявок</div>';
+          return;
+        }
+        container.innerHTML = json.data.map(renderCard).join('');
+      } catch (e) {
+        container.innerHTML = '<div class="empty">Ошибка загрузки</div>';
+      }
+    }
+
+    function renderCard(r) {
+      const b = r.booking;
+      const placementMap = {
+        "family": "👪 Семья (вместе)",
+        "separate": "🚻 Раздельно (по полу)",
+        "solo": "🧍 Одиночное"
+      };
+      const placement = placementMap[b.placement_type] || (b.placement_type || "-");
+      return `
+      <div class="card" data-id="${r.id}">
+        <div class="header">
+          <div>
+            <div class="title">Бронь #${r.booking_id} · ${b.package_name || '-'}</div>
+            <div class="meta">Лист: ${b.sheet_name || '-'} · Таблица: ${b.table_id || '-'} · Строка: ${b.sheet_row_number || '-'}</div>
+            <div class="meta">Инициатор: ${r.initiator_id}</div>
+          </div>
+          <div class="status">${r.request_type === 'cancel' ? 'Отмена' : 'Перенос'}</div>
+        </div>
+
+        <div class="section">
+          <h4>Паломник</h4>
+          <div class="row"><span class="label">ФИО</span><span class="value">${b.guest_last_name || '-'} ${b.guest_first_name || '-'}</span></div>
+          <div class="row"><span class="label">Телефон</span><span class="value">${b.client_phone || '-'}</span></div>
+        </div>
+
+        <div class="section">
+          <h4>Размещение</h4>
+          <div class="badge">${placement}</div>
+          <div class="row"><span class="label">Комната</span><span class="value">${b.room_type || '-'}</span></div>
+          <div class="row"><span class="label">Питание</span><span class="value">${b.meal_type || '-'}</span></div>
+          <div class="row"><span class="label">Цена</span><span class="value">${b.price || '-'}</span></div>
+          <div class="row"><span class="label">Оплачено</span><span class="value">${b.amount_paid || '-'}</span></div>
+        </div>
+
+        <div class="section">
+          <h4>Детали</h4>
+          <div class="row"><span class="label">Источник</span><span class="value">${b.source || '-'}</span></div>
+          <div class="row"><span class="label">Регион</span><span class="value">${b.region || '-'}</span></div>
+          <div class="row"><span class="label">Менеджер</span><span class="value">${b.manager_name_text || '-'}</span></div>
+        </div>
+
+        <div class="section">
+          <h4>Комментарий</h4>
+          <div class="note">${b.comment || '-'}</div>
+        </div>
+
+        <div class="actions">
+          <button class="btn ok" onclick="approve(${r.id})">✅ Подтвердить</button>
+          <button class="btn neutral" onclick="reject(${r.id})">❌ Отклонить</button>
+        </div>
+      </div>`;
+    }
+
+    async function approve(id) {
+      const card = document.querySelector(`[data-id="${id}"]`);
+      if (card) card.style.opacity = 0.6;
+      const res = await fetch(`${API_URL}/api/admin/requests/${id}/approve`, {method: "POST"});
+      const json = await res.json().catch(() => ({}));
+      if (!json.ok) {
+        alert("Ошибка: " + (json.error || res.status));
+        if (card) card.style.opacity = 1;
+        return;
+      }
+      loadRequests();
+    }
+
+    async function reject(id) {
+      const card = document.querySelector(`[data-id="${id}"]`);
+      if (card) card.style.opacity = 0.6;
+      const res = await fetch(`${API_URL}/api/admin/requests/${id}/reject`, {method: "POST"});
+      const json = await res.json().catch(() => ({}));
+      if (!json.ok) {
+        alert("Ошибка: " + (json.error || res.status));
+        if (card) card.style.opacity = 1;
+        return;
+      }
+      loadRequests();
+    }
+
+    loadRequests();
+  </script>
+</body>
+</html>

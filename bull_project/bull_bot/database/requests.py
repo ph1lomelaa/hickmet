@@ -1,6 +1,6 @@
 from sqlalchemy import select, desc, func, distinct, or_
 from datetime import datetime, timedelta
-from .models import User, Booking, Request4U
+from .models import User, Booking, Request4U, AdminSettings, ApprovalRequest
 from .setup import async_session
 
 # === ПОЛЬЗОВАТЕЛИ ===
@@ -41,6 +41,58 @@ async def get_admin_ids():
         query = select(User.telegram_id).where(User.role == "admin")
         result = await session.scalars(query)
         return result.all()
+
+# === НАСТРОЙКИ АДМИНОВ ===
+async def get_admin_settings(admin_id: int) -> AdminSettings:
+    async with async_session() as session:
+        settings = await session.get(AdminSettings, admin_id)
+        return settings
+
+async def set_admin_settings(admin_id: int, notify_new: bool = None, notify_cancel: bool = None, notify_reschedule: bool = None):
+    async with async_session() as session:
+        settings = await session.get(AdminSettings, admin_id)
+        if not settings:
+            settings = AdminSettings(admin_id=admin_id)
+            session.add(settings)
+        if notify_new is not None:
+            settings.notify_new = 1 if notify_new else 0
+        if notify_cancel is not None:
+            settings.notify_cancel = 1 if notify_cancel else 0
+        if notify_reschedule is not None:
+            settings.notify_reschedule = 1 if notify_reschedule else 0
+        await session.commit()
+
+# === APPROVAL REQUESTS ===
+async def create_approval_request(booking_id: int, request_type: str, initiator_id: int, comment: str = None) -> int:
+    async with async_session() as session:
+        req = ApprovalRequest(
+            booking_id=booking_id,
+            request_type=request_type,
+            initiator_id=initiator_id,
+            status="pending",
+            comment=comment
+        )
+        session.add(req)
+        await session.commit()
+        await session.refresh(req)
+        return req.id
+
+async def update_approval_status(request_id: int, status: str):
+    async with async_session() as session:
+        req = await session.get(ApprovalRequest, request_id)
+        if req:
+            req.status = status
+            await session.commit()
+
+async def get_pending_requests():
+    async with async_session() as session:
+        query = select(ApprovalRequest).where(ApprovalRequest.status == "pending").order_by(desc(ApprovalRequest.created_at))
+        result = await session.scalars(query)
+        return result.all()
+
+async def get_approval_request(req_id: int):
+    async with async_session() as session:
+        return await session.get(ApprovalRequest, req_id)
 
 async def delete_user(tg_id: int):
     async with async_session() as session:

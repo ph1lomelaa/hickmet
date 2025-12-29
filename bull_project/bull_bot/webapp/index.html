@@ -175,6 +175,17 @@
             border-color: var(--accent-dark);
             box-shadow: 0 6px 16px rgba(107, 93, 82, 0.25);
         }
+        .edit-notice {
+            display: none;
+            margin: 12px 0;
+            padding: 12px 14px;
+            border-radius: 10px;
+            background: #FFF5E0;
+            color: #8A5B00;
+            border: 1px solid #FFD18C;
+            font-size: 14px;
+            font-weight: 600;
+        }
         
         /* Карточки паломников */
         .tourist-card {
@@ -446,6 +457,9 @@
 <div class="app-header">
     <h1>Бронирование Умры</h1>
 </div>
+<div id="edit_notice" class="edit-notice">
+    ✏️ Режим редактирования: пакет и дата зафиксированы, можно менять только данные паломника.
+</div>
 
 <div id="step_1">
     <div class="step-indicator">
@@ -642,6 +656,8 @@
     const API_URL = window.BULL_API_URL;
     let pilgrimsData = [];
     let uploadedPassports = {}; // idx -> path
+    let currentMode = 'create';
+    let currentBookingId = null;
 
     // --- ПОИСК ПАКЕТОВ ---
     async function handleSearch() {
@@ -670,10 +686,12 @@
     }
 
     document.getElementById('date_input').addEventListener('input', function() {
+        if (currentMode === 'edit') return;
         if (this.value.length === 5) handleSearch();
     });
 
     document.getElementById('pkg_name').onchange = (e) => {
+        if (currentMode === 'edit') return;
         const opt = e.target.options[e.target.selectedIndex];
         document.getElementById('sheet_name_hidden').value = opt.dataset.sheet;
         document.getElementById('table_id_hidden').value = opt.dataset.table;
@@ -713,8 +731,8 @@
     console.log("   booking_id:", editBookingId);
     console.log("   old_booking_id:", oldBookingId);
 
-    let currentMode = modeParam || localStorage.getItem('mode') || 'create';
-    let currentBookingId = editBookingId || localStorage.getItem('edit_booking_id') || null;
+    currentMode = modeParam || localStorage.getItem('mode') || 'create';
+    currentBookingId = editBookingId || localStorage.getItem('edit_booking_id') || null;
     let currentOldBookingId = oldBookingId || localStorage.getItem('old_booking_id') || null;
 
     // Основной сценарий: данные приходят через URL (бот)
@@ -802,6 +820,9 @@
         }
     }
 
+    // Показываем предупреждение и фиксируем поля при редактировании
+    applyEditLock();
+
     // Если режим редактирования - загружаем полные данные брони из API
     if (currentMode === 'edit' && currentBookingId) {
         console.log("📋 Режим редактирования: загружаю полные данные брони #" + currentBookingId);
@@ -810,6 +831,7 @@
 
     function renderPilgrims() {
         const container = document.getElementById('pilgrims-container');
+        const showUpload = currentMode !== 'edit'; // в режиме редактирования убираем загрузку/путь файла
         container.innerHTML = pilgrimsData.map((p, idx) => `
             <div class="tourist-card">
                 <div class="tourist-header">
@@ -819,11 +841,12 @@
                     </button>
                 </div>
                 <input type="tel" class="phone-input" data-idx="${idx}" placeholder="Номер телефона" value="${p.phone !== '-' ? p.phone : ''}">
-                <div class="upload-wrapper">
-                    <label>Фото паспорта (jpg/png/pdf):</label>
-                    <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-idx="${idx}" class="passport-file">
-                    ${p.passport_image_path ? `<div class="file-info">Текущий файл: ${p.passport_image_path}</div>` : ''}
-                </div>
+                ${showUpload ? `
+                    <div class="upload-wrapper">
+                        <label>Фото паспорта (jpg/png/pdf):</label>
+                        <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-idx="${idx}" class="passport-file">
+                    </div>
+                ` : ''}
 
                 <div id="passport_${idx}" class="passport-data">
                     <div class="passport-field"><strong>Фамилия:</strong> <span>${p.last_name}</span></div>
@@ -907,6 +930,16 @@
         el.classList.toggle('visible');
     }
 
+    function applyEditLock() {
+        if (currentMode !== 'edit') return;
+        const dateInput = document.getElementById('date_input');
+        const pkgSelect = document.getElementById('pkg_name');
+        if (dateInput) dateInput.disabled = true;
+        if (pkgSelect) pkgSelect.disabled = true;
+        const notice = document.getElementById('edit_notice');
+        if (notice) notice.style.display = 'block';
+    }
+
     // Функция для загрузки полных данных брони при редактировании
     async function loadBookingData(bookingId) {
         try {
@@ -928,7 +961,7 @@
                 const pkgSelect = document.getElementById('pkg_name');
                 pkgSelect.innerHTML = `<option value="${booking.package_name}">${booking.package_name}</option>`;
                 pkgSelect.value = booking.package_name;
-                pkgSelect.disabled = false;
+                pkgSelect.disabled = true;
             }
 
             if (booking.sheet_name) {
@@ -1014,6 +1047,7 @@
             }
 
             console.log("✅ Все поля формы предзаполнены");
+            applyEditLock();
             return booking;
         } catch (e) {
             console.error("❌ Ошибка загрузки данных брони:", e);

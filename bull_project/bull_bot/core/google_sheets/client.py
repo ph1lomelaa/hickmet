@@ -11,16 +11,39 @@ _tables_cache = None
 def get_accessible_tables(use_cache=True) -> dict:
     """
     Возвращает словарь всех доступных таблиц: {"Название": "ID"}
-    Использует client.openall(), но только один раз (кэширует результат).
+
+    Если USE_TEST_TABLE=true, возвращает только тестовую таблицу.
+    В противном случае возвращает все доступные таблицы.
     """
     global _tables_cache
 
-    # Если кэш есть и мы хотим его использовать - возвращаем мгновенно
+    # Импортируем константы
+    from bull_project.bull_bot.config.constants import (
+        USE_TEST_TABLE, TEST_SPREADSHEET_ID, TEST_SPREADSHEET_NAME
+    )
+
+    # 🧪 ТЕСТОВЫЙ РЕЖИМ: возвращаем только TEST таблицу
+    if USE_TEST_TABLE:
+        if not TEST_SPREADSHEET_ID:
+            logger.error("❌ USE_TEST_TABLE=true, но TEST_SPREADSHEET_ID пуст!")
+            return {}
+
+        # Кэшируем тестовую таблицу
+        if use_cache and _tables_cache:
+            return _tables_cache
+
+        result = {TEST_SPREADSHEET_NAME: TEST_SPREADSHEET_ID}
+        _tables_cache = result
+        logger.info(f"🧪 Используется тестовая таблица: {TEST_SPREADSHEET_NAME}")
+        return result
+
+    # 📊 PRODUCTION РЕЖИМ: возвращаем все таблицы
     if use_cache and _tables_cache:
         return _tables_cache
 
     client = get_google_client()
-    if not client: return {}
+    if not client:
+        return {}
 
     try:
         # Это тяжелый запрос, он занимает 1-3 секунды
@@ -34,6 +57,7 @@ def get_accessible_tables(use_cache=True) -> dict:
 
         # Сохраняем в память
         _tables_cache = result
+        logger.info(f"📊 Загружено {len(result)} production таблиц")
         return result
     except Exception as e:
         logger.error(f"❌ Ошибка получения списка таблиц: {e}")

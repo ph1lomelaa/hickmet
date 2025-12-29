@@ -3,7 +3,6 @@ import re
 import json
 import logging
 from typing import Optional, Dict
-
 from aiogram import Bot, Dispatcher
 import gspread
 from google.oauth2.service_account import Credentials
@@ -59,8 +58,21 @@ CREDENTIALS_DIR = os.path.join(PROJECT_ROOT, "credentials")
 # Имя файла ключа (должно совпадать с тем, как ты назвала файл в папке credentials)
 CREDENTIALS_FILE = os.path.join(CREDENTIALS_DIR, "service_account.json")
 # ==================== РЕЖИМ РАБОТЫ ====================
-MOCK_MODE = os.getenv("MOCK_MODE", "true").lower() == "false"
-print(f"🔧 MOCK_MODE: {MOCK_MODE}")
+# MOCK_MODE: true = заглушка (без Google Sheets), false = реальный режим
+MOCK_MODE = os.getenv("MOCK_MODE", "true").lower() == "true"
+print(f"🔧 MOCK_MODE: {MOCK_MODE} (true = заглушка, false = Google Sheets)")
+
+# ==================== ТЕСТОВАЯ СРЕДА ====================
+USE_TEST_TABLE = os.getenv("USE_TEST_TABLE", "false").lower() == "true"
+TEST_SPREADSHEET_ID = os.getenv("TEST_SPREADSHEET_ID", "").strip()
+TEST_SPREADSHEET_NAME = os.getenv("TEST_SPREADSHEET_NAME", "[TEST] Bull Project")
+
+if USE_TEST_TABLE:
+    LOGGER.warning(f"🧪 ТЕСТОВЫЙ РЕЖИМ: Используется таблица {TEST_SPREADSHEET_NAME}")
+    if not TEST_SPREADSHEET_ID:
+        LOGGER.error("❌ USE_TEST_TABLE=true, но TEST_SPREADSHEET_ID не указан!")
+else:
+    LOGGER.info("📊 PRODUCTION режим: Используются все доступные таблицы")
 
 # ==================== TELEGRAM ====================
 API_BASE_URL = os.getenv("API_BASE_URL", "").rstrip("/")
@@ -153,9 +165,9 @@ else:
 
 # ==================== ПРОЧИЕ ПУТИ / НАСТРОЙКИ ====================
 
-ADMIN_PASSWORD = "HickmetTravel"
-MANAGER_PASSWORD = "SALE"
-CARE_PASSWORD = "CARE"
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "HickmetTravel")
+MANAGER_PASSWORD = os.getenv("MANAGER_PASSWORD", "SALE")
+CARE_PASSWORD = os.getenv("CARE_PASSWORD", "CARE")
 
 FONTS_DIR = os.path.join(PROJECT_ROOT, "assets", "fonts", "Montserrat", "static")
 TTF_REGULAR = os.path.join(FONTS_DIR, "Montserrat-Regular.ttf")

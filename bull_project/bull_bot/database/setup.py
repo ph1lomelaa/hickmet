@@ -8,6 +8,8 @@ DB_PATH = os.path.join(BASE_DIR, "bull_database.db")
 
 # Берем URL из переменной окружения, по умолчанию используем локальный SQLite
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DB_PATH}")
+print(f"🔍 DEBUG setup.py: os.getenv('DATABASE_URL') = {os.getenv('DATABASE_URL')}")
+print(f"🔍 DEBUG setup.py: DATABASE_URL итоговый = {DATABASE_URL}")
 
 # Автоматически конвертируем postgresql:// в postgresql+asyncpg://
 if DATABASE_URL.startswith("postgresql://"):

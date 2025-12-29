@@ -719,7 +719,4 @@ def test_easyocr_parser(file_path: str):
     print(result.to_dict())
     return result
 
-
-# Алиас для обратной совместимости
 PassportParser = PassportParserEasyOCR
-
