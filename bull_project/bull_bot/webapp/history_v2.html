@@ -1132,17 +1132,19 @@
         // Кодируем данные для URL
         const pilgrimsParam = encodeURIComponent(JSON.stringify([pilgrim]));
 
-        // Формируем URL с параметрами для переноса
-        const url = new URL('index.html', window.location.origin);
-        url.searchParams.set('pilgrims', pilgrimsParam);
-        url.searchParams.set('mode', 'reschedule');
-        url.searchParams.set('old_booking_id', booking.id);
+        // Формируем относительный URL для index.html (в той же директории)
+        const params = new URLSearchParams();
+        params.set('pilgrims', pilgrimsParam);
+        params.set('mode', 'reschedule');
+        params.set('old_booking_id', booking.id);
+
+        const targetUrl = `index.html?${params.toString()}`;
 
         console.log('♻️ Открываю перенос брони #', booking.id);
-        console.log('URL:', url.href);
+        console.log('URL:', targetUrl);
 
         // Переходим на форму переноса
-        window.location.href = url.href;
+        window.location.href = targetUrl;
     }
 
     function rescheduleBooking() {
@@ -1191,17 +1193,19 @@
         // Кодируем данные для URL
         const pilgrimsParam = encodeURIComponent(JSON.stringify([pilgrim]));
 
-        // Формируем URL с параметрами для редактирования
-        const url = new URL('index.html', window.location.origin);
-        url.searchParams.set('pilgrims', pilgrimsParam);
-        url.searchParams.set('mode', 'edit');
-        url.searchParams.set('booking_id', booking.id);
+        // Формируем относительный URL для index.html (в той же директории)
+        const params = new URLSearchParams();
+        params.set('pilgrims', pilgrimsParam);
+        params.set('mode', 'edit');
+        params.set('booking_id', booking.id);
+
+        const targetUrl = `index.html?${params.toString()}`;
 
         console.log('✏️ Открываю редактирование брони #', booking.id);
-        console.log('URL:', url.href);
+        console.log('URL:', targetUrl);
 
         // Переходим на форму редактирования
-        window.location.href = url.href;
+        window.location.href = targetUrl;
     }
 
     async function startUploadPassport(bookingId) {
