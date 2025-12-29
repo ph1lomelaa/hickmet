@@ -12,13 +12,16 @@ from bull_project.bull_bot.core.google_sheets.client import (
     get_accessible_tables, get_packages_from_sheet, get_sheet_names
 )
 from bull_project.bull_bot.database.requests import (
-    get_booking_by_id, add_booking_to_db, update_booking_row, mark_booking_rescheduled, get_user_by_id
+    get_booking_by_id, add_booking_to_db, update_booking_row, mark_booking_rescheduled,
+    get_user_by_id, create_approval_request, update_booking_fields,
+    get_admin_ids, get_admin_settings
 )
 from bull_project.bull_bot.core.google_sheets.writer import (
     save_group_booking, check_train_exists, clear_booking_in_sheets, write_rescheduled_booking_red
 )
 # Импортируем BookingFlow из booking_handlers, чтобы состояния не конфликтовали
 from bull_project.bull_bot.handlers.booking_handlers import BookingFlow
+from bull_project.bull_bot.config.constants import bot
 
 router = Router()
 
@@ -54,120 +57,93 @@ async def finalize_reschedule(message: Message, state: FSMContext):
         user_db = await get_user_by_id(message.chat.id)
         manager_real_name = user_db.full_name if user_db else "Manager"
 
-        # Общие данные для БД и Гугла
-        common_data = {
+        # Готовим данные для новой брони (без записи в Sheets, статус pending_reschedule)
+        new_booking_data = {
             'table_id': data['current_sheet_id'],
             'sheet_name': data['current_sheet_name'],
             'package_name': data['selected_pkg_name'],
             'room_type': data.get('room', 'Standard'),
-            'meal': data.get('meal', 'BB'),
+            'meal_type': data.get('meal', 'BB'),
             'price': data.get('price', '0'),
             'amount_paid': data.get('amount_paid', '0'),
             'exchange_rate': data.get('exchange_rate', '-'),
             'discount': data.get('discount', '-'),
-            'contract': data.get('contract', '-'), # 🔥 НОВОЕ ПОЛЕ
-
+            'contract_number': data.get('contract', '-'),
             'region': data.get('region', '-'),
             'departure_city': data.get('departure_city', '-'),
             'source': data.get('source', 'Reschedule'),
-
             'comment': f"ПЕРЕНОС: {data.get('comment', '-')}",
-            'manager': manager_real_name,
             'train': data.get('train', '-'),
-            'created_by_name': manager_real_name
-        }
-
-        # Объединяем с паспортом
-        full_data_for_db = {
-            **common_data,
-            'passport_data': passport_data,
-            # Если есть сохраненные данные визы/авиа из старой брони
-            'visa': passport_data.get('visa', '-'),
-            'avia_request': passport_data.get('avia_request', '-'),
+            'manager_name_text': manager_real_name,
+            'visa_status': passport_data.get('visa', '-'),
+            'avia': passport_data.get('avia_request', '-'),
             'client_phone': passport_data.get('client_phone', '-'),
-            'manager_name_text': manager_real_name
+            'guest_last_name': passport_data.get('Last Name', ''),
+            'guest_first_name': passport_data.get('First Name', ''),
+            'gender': passport_data.get('Gender', ''),
+            'date_of_birth': passport_data.get('Date of Birth', ''),
+            'passport_num': passport_data.get('Document Number', ''),
+            'passport_expiry': passport_data.get('Document Expiration', ''),
+            'guest_iin': passport_data.get('IIN', ''),
+            'placement_type': data.get('placement_type', 'separate'),
+            'passport_image_path': passport_data.get('passport_image_path', None),
+            'status': 'pending_reschedule'
         }
 
-        # 1. Запись в БД
-        new_booking_id = await add_booking_to_db(full_data_for_db, message.chat.id)
+        new_booking_id = await add_booking_to_db(new_booking_data, message.chat.id)
 
-        # 2. Запись в Гугл (Только 1 человек при переносе)
-        # placement_mode='separate' потому что переносим по одному
-        saved_rows = await save_group_booking(
-            [passport_data],
-            common_data,
-            placement_mode='separate',
-            specific_row=data.get('specific_row'),
-            is_share=data.get('is_share', False)
+        # Создаем заявку для админов, храним old_id в comment
+        # Сначала создаём запрос, чтобы избежать race condition
+        old_id = data.get('old_booking_id')
+        comment = f"old:{old_id}" if old_id else None
+        req_id = await create_approval_request(new_booking_id, "reschedule", message.chat.id, comment=comment)
+
+        # Старую бронь ставим в pending_reschedule
+        if old_id:
+            await update_booking_fields(old_id, {"status": "pending_reschedule"})
+
+        await message.answer(
+            f"♻️ Запрос на перенос брони #{old_id} → #{new_booking_id} отправлен админам.\nОжидайте подтверждения.",
+            reply_markup=get_menu_by_role(user_db.role if user_db else 'manager'),
+            parse_mode="HTML"
         )
-
-        if saved_rows:
-            # Обновляем строку в БД
-            await update_booking_row(new_booking_id, saved_rows[0])
-
-            # 🔥 ОБРАБОТКА СТАРОЙ БРОНИ (аналогично отмене)
-            old_id = data.get('old_booking_id')
-            old_b = await get_booking_by_id(old_id)
-
-            if old_b:
-                # 1. Очищаем данные из строки
-                sheets_cleared = False
-                if old_b.sheet_row_number and old_b.table_id and old_b.sheet_name:
-                    sheets_cleared = await clear_booking_in_sheets(
-                        old_b.table_id,
-                        old_b.sheet_name,
-                        old_b.sheet_row_number,
-                        old_b.package_name
-                    )
-
-                # 2. Записываем перенос красным цветом с отступом
-                red_written = False
-                if old_b.table_id and old_b.sheet_name and old_b.package_name:
-                    guest_name = f"{old_b.guest_last_name} {old_b.guest_first_name}"
-                    red_written = await write_rescheduled_booking_red(
-                        old_b.table_id,
-                        old_b.sheet_name,
-                        old_b.package_name,
-                        guest_name
-                    )
-
-                # 3. Помечаем в БД как перенесенную
-                await mark_booking_rescheduled(old_id, comment=f"Перенесено в #{new_booking_id}")
-
-                # Формируем сообщение о результате
-                status_parts = []
-                if sheets_cleared:
-                    status_parts.append("✅ Данные очищены из таблицы")
-                else:
-                    status_parts.append("⚠️ Не удалось очистить данные (очистите вручную)")
-
-                if red_written:
-                    status_parts.append("✅ Перенос записан красным цветом")
-                else:
-                    status_parts.append("⚠️ Не удалось записать перенос красным")
-
-                status_parts.append(f"✅ Новая бронь #{new_booking_id} создана на строке {saved_rows[0]}")
-
-                await message.answer(
-                    f"♻️ <b>БРОНЬ #{old_id} ПЕРЕНЕСЕНА</b>\n\n"
-                    f"<b>Паломник:</b> {old_b.guest_last_name} {old_b.guest_first_name}\n"
-                    f"<b>Новая бронь:</b> #{new_booking_id}\n\n"
-                    f"<b>Статус операции:</b>\n"
-                    + "\n".join(f"• {s}" for s in status_parts),
-                    reply_markup=get_menu_by_role(user_db.role if user_db else 'manager'),
-                    parse_mode="HTML"
-                )
-            else:
-                await message.answer(
-                    f"✅ <b>Успешно перенесено!</b>\n"
-                    f"Новая бронь #{new_booking_id} создана на строке {saved_rows[0]}.",
-                    reply_markup=get_menu_by_role(user_db.role if user_db else 'manager'),
-                    parse_mode="HTML"
-                )
-        else:
-            await message.answer("⚠️ Ошибка записи в таблицу! (Бронь в БД создана, но в Гугл не попала).")
+        await notify_admins_reschedule(new_booking_id, old_id, req_id, message.chat.id)
 
     except Exception as e:
         await message.answer(f"❌ Ошибка переноса: {e}")
 
     await state.clear()
+
+
+async def notify_admins_reschedule(new_booking_id: int, old_id: int, req_id: int, initiator_id: int):
+    admin_ids = await get_admin_ids()
+    if not admin_ids:
+        return
+    booking = await get_booking_by_id(new_booking_id)
+    if not booking:
+        return
+    for admin_id in admin_ids:
+        settings = await get_admin_settings(admin_id)
+        if not settings or not settings.notify_reschedule:
+            continue
+        text = (
+            f"♻️ <b>Запрос на перенос</b>\n"
+            f"Старый #{old_id} → Новый #{booking.id}\n"
+            f"Пакет: {booking.package_name}\n"
+            f"Лист: {booking.sheet_name} • Таблица: {booking.table_id}\n"
+            f"Паломник: {booking.guest_last_name} {booking.guest_first_name}\n"
+            f"Тел: {booking.client_phone or '-'}\n"
+            f"Размещение: {booking.placement_type or '-'} | Комната: {booking.room_type or '-'} | Питание: {booking.meal_type or '-'}\n"
+            f"Цена: {booking.price or '-'} | Оплачено: {booking.amount_paid or '-'}\n"
+            f"Инициатор: {initiator_id}"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Подтвердить перенос", callback_data=f"admin_resched_ok:{req_id}"),
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"admin_resched_reject:{req_id}")
+            ]
+        ])
+        try:
+            await bot.send_message(admin_id, text, reply_markup=kb, parse_mode="HTML")
+        except Exception as e:
+            print(f"⚠️ Не удалось отправить уведомление админу {admin_id}: {e}")

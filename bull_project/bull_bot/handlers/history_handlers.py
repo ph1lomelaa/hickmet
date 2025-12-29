@@ -10,7 +10,11 @@ from bull_project.bull_bot.database.requests import (
     get_bookings_in_package,
     get_booking_by_id,
     mark_booking_cancelled,
-    get_user_role
+    get_user_role,
+    create_approval_request,
+    update_booking_fields,
+    get_admin_ids,
+    get_admin_settings
 )
 from bull_project.bull_bot.core.google_sheets.writer import (
     clear_booking_in_sheets,
@@ -19,10 +23,9 @@ from bull_project.bull_bot.core.google_sheets.writer import (
 from bull_project.bull_bot.config.keyboards import get_menu_by_role, kb_select_table
 from bull_project.bull_bot.handlers.booking_handlers import BookingFlow
 from bull_project.bull_bot.handlers.booking_handlers import send_webapp_link
+from bull_project.bull_bot.config.constants import bot
 
 router = Router()
-# user_id -> booking_id ожидает подтверждения текстом "YES"
-_CANCEL_PENDING: dict[int, int] = {}
 
 
 @router.callback_query(F.data.startswith("reschedule:"))
@@ -231,106 +234,32 @@ async def view_booking_card(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("cancel_ask:"))
 async def ask_cancel(call: CallbackQuery):
-    """Запрос подтверждения отмены бронирования"""
+    """Запрос отправляется админам на подтверждение"""
     bid = call.data.split(":")[1]
     b = await get_booking_by_id(int(bid))
     
     if not b:
         await call.answer("Бронь не найдена", show_alert=True)
         return
-    
-    # Сохраняем ожидание "YES"
-    _CANCEL_PENDING[call.from_user.id] = int(bid)
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="🔙 Вернуться",
-            callback_data=f"view_booking:{bid}"
-        )]
-    ])
-    
-    text = (
-        f"⚠️ <b>ВНИМАНИЕ! ОТМЕНА БРОНИРОВАНИЯ</b>\n\n"
-        f"Бронь: <b>{b.guest_last_name} {b.guest_first_name}</b>\n\n"
-        f"<i>Это действие:</i>\n"
-        f"• Очистит данные из Google Таблицы\n"
-        f"• Запишет отмену красным цветом\n"
-        f"• Пометит бронь как отмененную в базе\n\n"
-        f"Для подтверждения отправьте ответом слово <b>YES</b>."
+    # Создаём заявку и ставим статус pending_cancel
+    # Сначала создаём запрос, чтобы избежать race condition
+    req_id = await create_approval_request(b.id, "cancel", call.from_user.id)
+    await update_booking_fields(b.id, {"status": "pending_cancel"})
+
+    await call.message.edit_text(
+        f"⏳ Запрос на отмену брони #{b.id} отправлен администраторам.\nОжидайте решения.",
+        reply_markup=get_menu_by_role(await get_user_role(call.from_user.id)),
+        parse_mode="HTML"
     )
-    
-    await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await notify_admins_cancel(b, req_id, call.from_user.id)
+    await call.answer()
 
 
 @router.callback_query(F.data.startswith("cancel_confirm:"))
 async def process_cancel(call: CallbackQuery):
     """Обработка отмены бронирования"""
-    booking_id = int(call.data.split(":")[1])
-    b = await get_booking_by_id(booking_id)
-
-    if not b:
-        await call.answer("Ошибка: бронь не найдена")
-        return
-
-    await call.message.edit_text(
-        "⏳ <b>Обработка отмены...</b>\n\n"
-        "Пожалуйста, подождите.",
-        parse_mode="HTML"
-    )
-
-    # 1. Очищаем данные из строки
-    sheets_cleared = False
-    if b.sheet_row_number and b.table_id and b.sheet_name:
-        sheets_cleared = await clear_booking_in_sheets(
-            b.table_id,
-            b.sheet_name,
-            b.sheet_row_number,
-            b.package_name
-        )
-    
-    # 2. Записываем отмену красным цветом с отступом
-    red_written = False
-    if b.table_id and b.sheet_name and b.package_name:
-        guest_name = f"{b.guest_last_name} {b.guest_first_name}"
-        red_written = await write_cancelled_booking_red(
-            b.table_id,
-            b.sheet_name,
-            b.package_name,
-            guest_name
-        )
-
-    # 3. Помечаем в БД как отмененную
-    await mark_booking_cancelled(booking_id)
-
-    # Формируем сообщение о результате
-    status_parts = []
-    if sheets_cleared:
-        status_parts.append("✅ Данные очищены из таблицы")
-    else:
-        status_parts.append("⚠️ Не удалось очистить данные (очистите вручную)")
-    
-    if red_written:
-        status_parts.append("✅ Отмена записана красным цветом")
-    else:
-        status_parts.append("⚠️ Не удалось записать отмену красным")
-    
-    status_parts.append("✅ Бронь помечена как отмененная в системе")
-
-    role = await get_user_role(call.from_user.id)
-
-    result_text = (
-        f"🗑 <b>БРОНЬ #{booking_id} ОТМЕНЕНА</b>\n\n"
-        f"<b>Паломник:</b> {b.guest_last_name} {b.guest_first_name}\n"
-        f"<b>Пакет:</b> {b.package_name}\n\n"
-        f"<b>Статус операции:</b>\n"
-        + "\n".join(f"• {s}" for s in status_parts)
-    )
-
-    await call.message.edit_text(
-        result_text,
-        reply_markup=get_menu_by_role(role),
-        parse_mode="HTML"
-    )
+    await call.answer("Отмена через админа. Ожидайте решения.", show_alert=True)
 
 # === ИЗМЕНЕНИЕ БРОНИ ===
 @router.callback_query(F.data.startswith("edit:"))
@@ -386,66 +315,34 @@ async def start_edit(call: CallbackQuery, state: FSMContext):
     await send_webapp_link(call.message, state)
     await call.answer()
 
-# === ТЕКСТОВОЕ ПОДТВЕРЖДЕНИЕ "YES" ===
-@router.message(F.text)
-async def cancel_by_yes(message: Message):
-    # Фильтруем только текстовые сообщения "yes"/"YES"
-    if not hasattr(message, "text"):
+# ====== ВСПОМОГАТЕЛЬНОЕ: Уведомление админам о запросе отмены ======
+async def notify_admins_cancel(booking, req_id: int, initiator_id: int):
+    admin_ids = await get_admin_ids()
+    if not admin_ids:
         return
-    if message.text.strip().lower() != "yes":
-        return
-
-    user_id = message.from_user.id
-    booking_id = _CANCEL_PENDING.get(user_id)
-    if not booking_id:
-        return
-
-    b = await get_booking_by_id(booking_id)
-    if not b:
-        await message.answer("❌ Бронь не найдена.")
-        _CANCEL_PENDING.pop(user_id, None)
-        return
-
-    await message.answer(
-        "⏳ Обработка отмены...\nПожалуйста, подождите.",
-        parse_mode="HTML"
-    )
-
-    # Повторяем логику process_cancel
-    sheets_cleared = False
-    if b.sheet_row_number and b.table_id and b.sheet_name:
-        sheets_cleared = await clear_booking_in_sheets(
-            b.table_id,
-            b.sheet_name,
-            b.sheet_row_number,
-            b.package_name
+    for admin_id in admin_ids:
+        settings = await get_admin_settings(admin_id)
+        if not settings or not settings.notify_cancel:
+            continue
+        text = (
+            f"🛑 <b>Запрос на отмену брони</b>\n"
+            f"#{booking.id} • {booking.package_name}\n"
+            f"Лист: {booking.sheet_name} • Строка: {booking.sheet_row_number or '-'}\n"
+            f"Паломник: {booking.guest_last_name} {booking.guest_first_name}\n"
+            f"Тел: {booking.client_phone or '-'}\n"
+            f"Размещение: {booking.placement_type or '-'} | Комната: {booking.room_type or '-'} | Питание: {booking.meal_type or '-'}\n"
+            f"Цена: {booking.price or '-'} | Оплачено: {booking.amount_paid or '-'}\n"
+            f"Инициатор: {initiator_id}"
         )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"admin_cancel_ok:{req_id}"),
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"admin_cancel_reject:{req_id}")
+            ]
+        ])
+        try:
+            await bot.send_message(admin_id, text, reply_markup=kb, parse_mode="HTML")
+        except Exception as e:
+            print(f"⚠️ Не удалось отправить уведомление админу {admin_id}: {e}")
 
-    red_written = False
-    if b.table_id and b.sheet_name and b.package_name:
-        guest_name = f"{b.guest_last_name} {b.guest_first_name}"
-        red_written = await write_cancelled_booking_red(
-            b.table_id,
-            b.sheet_name,
-            b.package_name,
-            guest_name
-        )
-
-    await mark_booking_cancelled(booking_id)
-
-    status_parts = []
-    status_parts.append("✅ Данные очищены из таблицы" if sheets_cleared else "⚠️ Не удалось очистить данные (очистите вручную)")
-    status_parts.append("✅ Отмена записана красным цветом" if red_written else "⚠️ Не удалось записать отмену красным")
-    status_parts.append("✅ Бронь помечена как отмененная в системе")
-
-    role = await get_user_role(user_id)
-    await message.answer(
-        f"🗑 <b>БРОНЬ #{booking_id} ОТМЕНЕНА</b>\n\n"
-        f"<b>Паломник:</b> {b.guest_last_name} {b.guest_first_name}\n"
-        f"<b>Пакет:</b> {b.package_name}\n\n"
-        f"<b>Статус операции:</b>\n" + "\n".join(f"• {s}" for s in status_parts),
-        reply_markup=get_menu_by_role(role),
-        parse_mode="HTML"
-    )
-
-    _CANCEL_PENDING.pop(user_id, None)
+# Отмена через текст "YES" отключена: теперь отмена только через админское подтверждение

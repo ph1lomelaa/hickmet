@@ -412,6 +412,9 @@
         tg.ready();
         tg.expand();
 
+        const urlParams = new URLSearchParams(window.location.search);
+        const autoPhones = urlParams.get('mode') === 'phones' || window.location.hash.includes('phones');
+
         const safeValue = (value, fallback = '-') => {
             if (value === null || value === undefined) return fallback;
             const str = String(value).trim();
@@ -436,13 +439,14 @@
             packages: [],
             selectedPackage: null,
             bookings: [],
-            phones: []
+            phones: [],
+            autoPhones: autoPhones
         };
 
         init();
 
         async function init() {
-            updateStep('Шаг 1/4: Выбор таблицы');
+            updateStep(state.autoPhones ? 'Сбор номеров' : 'Шаг 1/4: Выбор таблицы');
             await loadTables();
         }
 
@@ -733,6 +737,10 @@
             });
 
             showSection('bookingsSection');
+            if (state.autoPhones) {
+                state.autoPhones = false; // чтобы не зациклиться при возвратах
+                showPhones();
+            }
         }
 
         function toggleDetails(index) {

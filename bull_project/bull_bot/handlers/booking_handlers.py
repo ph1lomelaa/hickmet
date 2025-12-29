@@ -612,15 +612,13 @@ async def handle_webapp_data(message: Message, state: FSMContext):
         elif mode == "edit":
             success_msg = "✅ Изменения успешно сохранены!"
 
-        await message.answer(success_msg)
-
-        # Возвращаем в главное меню
+        # Возвращаем в главное меню с сообщением об успехе
         user_id = message.from_user.id
         role = await get_user_role(user_id)
         menu_kb = get_menu_by_role(role)
 
         await message.answer(
-            "<b>🕋 Главное меню</b>",
+            f"{success_msg}\n\n<b>Выберите действие:</b>",
             reply_markup=menu_kb,
             parse_mode="HTML"
         )
