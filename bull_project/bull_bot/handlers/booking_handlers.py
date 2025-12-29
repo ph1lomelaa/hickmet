@@ -112,7 +112,12 @@ async def input_count(message: Message, state: FSMContext):
         await message.answer("❌ Введите число (например: 2).")
         return
     await state.update_data(total_pilgrims=int(message.text), current_pilgrim=1, pilgrims_list=[])
-    await message.answer("Отправьте паспорт 1-го паломника:")
+    await message.answer(
+        "📤 Отправьте паспорт 1-го паломника\n\n"
+        "💡 <i>Если нет паспорта, напишите текстом:\n"
+        "ФАМИЛИЯ ИМЯ</i>",
+        parse_mode="HTML"
+    )
     await state.set_state(BookingFlow.waiting_passport)
 
 # В функции process_passport (строка ~100)
@@ -296,6 +301,62 @@ async def process_passport(message: Message, state: FSMContext):
         await message.answer("⚠️ Ошибка OCR. Введите Фамилию Имя:")
         await state.set_state(BookingFlow.waiting_manual_name)
 
+@router.message(BookingFlow.waiting_passport, F.text)
+async def process_passport_text(message: Message, state: FSMContext):
+    """Обработка текстового ввода имени вместо паспорта"""
+    data = await state.get_data()
+    curr = data.get('current_pilgrim', 1)
+
+    # Парсим фамилию и имя из текста
+    parts = message.text.strip().split()
+    if len(parts) < 2:
+        await message.answer(
+            "❌ Введите Фамилию и Имя через пробел\n\n"
+            "Например: <b>IVANOV IVAN</b>\n\n"
+            "Или отправьте фото/скан паспорта",
+            parse_mode="HTML"
+        )
+        return
+
+    last_name = parts[0].upper()
+    first_name = " ".join(parts[1:]).upper()
+
+    # Создаем минимальный набор данных паспорта
+    p_data = {
+        'Last Name': last_name,
+        'First Name': first_name,
+        'Gender': 'M',  # По умолчанию, можно будет изменить в форме
+        'Date of Birth': '-',
+        'Document Number': '-',
+        'Document Expiration': '-',
+        'IIN': '-',
+        'passport_image_path': None,  # Нет паспорта
+        # Snake_case поля для writer.py
+        'last_name': last_name,
+        'first_name': first_name,
+        'gender': 'M',
+        'dob': '-',
+        'doc_num': '-',
+        'doc_exp': '-',
+        'iin': '-',
+    }
+
+    print(f"\n{'='*60}")
+    print(f"✍️ ТЕКСТОВЫЙ ВВОД (паломник {curr}):")
+    print(f"{'='*60}")
+    print(f"  👤 Фамилия: {last_name}")
+    print(f"  👤 Имя: {first_name}")
+    print(f"  📸 Паспорт: НЕТ (введено вручную)")
+    print(f"{'='*60}\n")
+
+    await message.answer(
+        f"✅ Принято: <b>{last_name} {first_name}</b>\n\n"
+        "⚠️ Остальные данные (дата рождения, паспорт) нужно будет заполнить в форме",
+        parse_mode="HTML"
+    )
+
+    await next_step_pilgrim(message, state, p_data)
+
 @router.message(BookingFlow.waiting_manual_name)
 async def manual_name(message: Message, state: FSMContext):
     parts = message.text.split()
@@ -313,7 +374,13 @@ async def next_step_pilgrim(message: Message, state: FSMContext, p_data):
 
     if data['current_pilgrim'] < data['total_pilgrims']:
         await state.update_data(current_pilgrim=data['current_pilgrim'] + 1)
-        await message.answer(f"✅ Ок. Паспорт <b>{data['current_pilgrim']+1}-го</b>:")
+        next_num = data['current_pilgrim'] + 1
+        await message.answer(
+            f"✅ Ок. Паспорт <b>{next_num}-го</b> паломника:\n\n"
+            f"💡 <i>Можно отправить фото паспорта или написать текстом:\n"
+            f"ФАМИЛИЯ ИМЯ</i>",
+            parse_mode="HTML"
+        )
         await state.set_state(BookingFlow.waiting_passport)
     else:
         await send_webapp_link(message, state)
