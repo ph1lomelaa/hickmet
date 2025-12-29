@@ -139,7 +139,7 @@ class PilgrimData(BaseModel):
     gender: str = "M"
     passport_expiry: str = "-"
     iin: str = "-"
-    passport_image_path: str = None
+    passport_image_path: Optional[str] = None
 
 class BookingSubmitIn(BaseModel):
     pilgrims: List[PilgrimData] = []

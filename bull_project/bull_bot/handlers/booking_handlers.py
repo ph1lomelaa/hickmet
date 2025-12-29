@@ -114,8 +114,8 @@ async def input_count(message: Message, state: FSMContext):
         return
     await state.update_data(total_pilgrims=int(message.text), current_pilgrim=1, pilgrims_list=[])
     await message.answer(
-        "📤 Отправьте паспорт 1-го паломника\n\n"
-        "💡 <i>Если нет паспорта, напишите текстом:\n"
+        "Отправьте паспорт 1-го паломника\n\n"
+        "<i>Если нет паспорта, напишите текстом:\n"
         "ФАМИЛИЯ ИМЯ</i>",
         parse_mode="HTML"
     )
@@ -313,7 +313,6 @@ async def process_passport_text(message: Message, state: FSMContext):
     if len(parts) < 2:
         await message.answer(
             "❌ Введите Фамилию и Имя через пробел\n\n"
-            "Например: <b>IVANOV IVAN</b>\n\n"
             "Или отправьте фото/скан паспорта",
             parse_mode="HTML"
         )
@@ -338,8 +337,8 @@ async def process_passport_text(message: Message, state: FSMContext):
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="👨 Мужской (M)", callback_data="gender:M"),
-            InlineKeyboardButton(text="👩 Женский (F)", callback_data="gender:F")
+            InlineKeyboardButton(text="Мужской (M)", callback_data="gender:M"),
+            InlineKeyboardButton(text="Женский (F)", callback_data="gender:F")
         ]
     ])
 
@@ -354,36 +353,37 @@ async def process_passport_text(message: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("gender:"))
 async def process_gender_choice(callback: CallbackQuery, state: FSMContext):
-    """Обработка выбора пола для текстового ввода"""
     gender = callback.data.split(":")[1]  # M или F
 
     data = await state.get_data()
     temp_name = data.get('temp_text_name', {})
+    temp_p = data.get('temp_p', {})  # Берем данные паспорта если были
 
     last_name = temp_name.get('last_name', '')
     first_name = temp_name.get('first_name', '')
 
     # Создаем полный набор данных паспорта с выбранным полом
+    # Если есть данные из temp_p (частично распознанный паспорт), используем их
     p_data = {
         'Last Name': last_name,
         'First Name': first_name,
         'Gender': gender,
-        'Date of Birth': '-',
-        'Document Number': '-',
-        'Document Expiration': '-',
-        'IIN': '-',
-        'passport_image_path': None,  # Нет паспорта
+        'Date of Birth': temp_p.get('Date of Birth', '-'),
+        'Document Number': temp_p.get('Document Number', '-'),
+        'Document Expiration': temp_p.get('Document Expiration', '-'),
+        'IIN': temp_p.get('IIN', '-'),
+        'passport_image_path': temp_p.get('passport_image_path'),  # Путь к файлу если был
         # Snake_case поля для writer.py
         'last_name': last_name,
         'first_name': first_name,
         'gender': gender,
-        'dob': '-',
-        'doc_num': '-',
-        'doc_exp': '-',
-        'iin': '-',
+        'dob': temp_p.get('Date of Birth', '-'),
+        'doc_num': temp_p.get('Document Number', '-'),
+        'doc_exp': temp_p.get('Document Expiration', '-'),
+        'iin': temp_p.get('IIN', '-'),
     }
 
-    gender_emoji = "👨" if gender == "M" else "👩"
+    gender_emoji = "" if gender == "M" else ""
     gender_text = "Мужской" if gender == "M" else "Женский"
 
     print(f"  ⚧ Пол: {gender_text} ({gender})")
@@ -402,11 +402,51 @@ async def process_gender_choice(callback: CallbackQuery, state: FSMContext):
 @router.message(BookingFlow.waiting_manual_name)
 async def manual_name(message: Message, state: FSMContext):
     parts = message.text.split()
-    if len(parts) < 2: return
+    if len(parts) < 2:
+        await message.answer("❌ Введите Фамилию и Имя через пробел")
+        return
+
     data = await state.get_data()
+    curr = data.get('current_pilgrim', 1)
+
+    last_name = parts[0].upper()
+    first_name = " ".join(parts[1:]).upper()
+
+    print(f"\n{'='*60}")
+    print(f"✍️ РУЧНОЙ ВВОД ФИО (паломник {curr}):")
+    print(f"{'='*60}")
+    print(f"  👤 Фамилия: {last_name}")
+    print(f"  👤 Имя: {first_name}")
+    print(f"{'='*60}\n")
+
+    # Берем существующие данные паспорта (если были)
     p = data.get('temp_p', {})
-    p['Last Name'], p['First Name'] = parts[0].upper(), " ".join(parts[1:]).upper()
-    await next_step_pilgrim(message, state, p)
+
+    # Обновляем Human Readable формат
+    p['Last Name'] = last_name
+    p['First Name'] = first_name
+
+    # 🔥 КРИТИЧНО: Добавляем snake_case поля для API
+    p['last_name'] = last_name
+    p['first_name'] = first_name
+
+    # Сохраняем имя и спрашиваем пол
+    await state.update_data(temp_text_name={'last_name': last_name, 'first_name': first_name})
+
+    gender_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="👨 Мужской", callback_data="gender:M"),
+            InlineKeyboardButton(text="👩 Женский", callback_data="gender:F")
+        ]
+    ])
+
+    await message.answer(
+        f"Принято: <b>{last_name} {first_name}</b>\n\n"
+        "Выберите пол:",
+        reply_markup=gender_kb,
+        parse_mode="HTML"
+    )
+    await state.set_state(BookingFlow.choosing_gender)
 
 async def next_step_pilgrim(message: Message, state: FSMContext, p_data):
     data = await state.get_data()
@@ -419,7 +459,7 @@ async def next_step_pilgrim(message: Message, state: FSMContext, p_data):
         next_num = data['current_pilgrim'] + 1
         await message.answer(
             f"✅ Ок. Паспорт <b>{next_num}-го</b> паломника:\n\n"
-            f"💡 <i>Можно отправить фото паспорта или написать текстом:\n"
+            f"<i>Если нет паспорта, напишите текстом:\n"
             f"ФАМИЛИЯ ИМЯ</i>",
             parse_mode="HTML"
         )
