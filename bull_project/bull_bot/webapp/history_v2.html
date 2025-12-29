@@ -420,6 +420,7 @@
         
         .action-btn {
             flex: 1;
+            min-width: 140px;
             padding: 8px 12px;
             border: 2px solid var(--border-color);
             border-radius: 10px;
@@ -498,7 +499,30 @@
             color: var(--text-secondary);
             font-size: 18px;
         }
-        
+
+        /* Loading overlay for file uploads */
+        body > .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        body > .loading p {
+            color: white;
+            margin-top: 20px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
         .spinner {
             display: inline-block;
             width: 40px;
@@ -508,7 +532,15 @@
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
-        
+
+        body > .loading .spinner {
+            width: 60px;
+            height: 60px;
+            border-width: 6px;
+            border-color: rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+        }
+
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
@@ -573,13 +605,39 @@
 <div class="modal" id="detail-modal">
     <div class="modal-content">
         <div class="modal-header" id="modal-title">Детали бронирования</div>
-        
+
         <div id="modal-body"></div>
-        
+
         <div class="modal-actions">
             <button class="action-btn" onclick="closeModal()">Закрыть</button>
             <button class="action-btn danger" id="cancel-btn" onclick="promptCancelSelected()">Отменить</button>
             <button class="action-btn primary" id="reschedule-btn" onclick="rescheduleBooking()">Перенести</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="edit-modal">
+    <div class="modal-content">
+        <h2 style="font-size: 20px; font-weight: 700; color: var(--accent-dark); margin-bottom: 20px;">✏️ Редактировать данные</h2>
+
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--accent-brown);">📞 ТЕЛЕФОН</label>
+            <input type="tel" id="edit-phone" class="search-input" style="width: 100%; margin-bottom: 0;" placeholder="+7 777 123 45 67">
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--accent-brown);">💰 СУММА ОПЛАТЫ</label>
+            <input type="text" id="edit-amount-paid" class="search-input" style="width: 100%; margin-bottom: 0;" placeholder="150000">
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--accent-brown);">💬 КОММЕНТАРИЙ</label>
+            <textarea id="edit-comment" style="width: 100%; padding: 14px 16px; border: 2px solid var(--border-color); border-radius: 14px; background-color: var(--bg-secondary); color: var(--text-primary); font-size: 16px; font-family: inherit; outline: none; min-height: 100px; resize: vertical;" placeholder="Дополнительная информация..."></textarea>
+        </div>
+
+        <div class="modal-actions">
+            <button class="action-btn" onclick="closeEditModal()">Отмена</button>
+            <button class="action-btn primary" onclick="saveEditedData()">💾 Сохранить</button>
         </div>
     </div>
 </div>
@@ -914,8 +972,10 @@
 
                 ${!cancelled ? `
                 <div class="booking-actions">
-                    <button class="action-btn danger" onclick="confirmCancel(${booking.id})">Отменить</button>
+                    <button class="action-btn" onclick="startEditData(${booking.id})">✏️ Изменить данные</button>
+                    <button class="action-btn primary" onclick="startUploadPassport(${booking.id})">📄 Загрузить паспорт</button>
                     <button class="action-btn" onclick="startReschedule(${booking.id})">Перенести</button>
+                    <button class="action-btn danger" onclick="confirmCancel(${booking.id})">Отменить</button>
                 </div>
                 ` : ''}
             </div>
@@ -1056,23 +1116,33 @@
         const booking = allBookings.find(b => b.id === bookingId);
         if (!booking) return;
 
-        const pilgrimData = {
-            first_name: booking.guest_first_name,
-            last_name: booking.guest_last_name,
-            phone: booking.client_phone,
-            passport_num: booking.passport_num,
-            date_of_birth: booking.date_of_birth,
-            gender: booking.gender,
-            passport_expiry: booking.passport_expiry,
-            iin: booking.guest_iin
+        // Формируем данные паломника для передачи в index.html
+        const pilgrim = {
+            last_name: booking.guest_last_name || "-",
+            first_name: booking.guest_first_name || "-",
+            gender: booking.gender || "M",
+            date_of_birth: booking.date_of_birth || "-",
+            passport_num: booking.passport_num || "-",
+            passport_expiry: booking.passport_expiry || "-",
+            iin: booking.guest_iin || "-",
+            phone: booking.client_phone || "-",
+            passport_image_path: booking.passport_image_path || null
         };
 
-        localStorage.setItem('reschedule_booking_id', booking.id);
-        localStorage.setItem('reschedule_data', JSON.stringify(pilgrimData));
-        localStorage.setItem('is_reschedule', 'true');
+        // Кодируем данные для URL
+        const pilgrimsParam = encodeURIComponent(JSON.stringify([pilgrim]));
 
-        // Используем существующую форму бронирования
-        window.location.href = 'index.html';
+        // Формируем URL с параметрами для переноса
+        const url = new URL('index.html', window.location.origin);
+        url.searchParams.set('pilgrims', pilgrimsParam);
+        url.searchParams.set('mode', 'reschedule');
+        url.searchParams.set('old_booking_id', booking.id);
+
+        console.log('♻️ Открываю перенос брони #', booking.id);
+        console.log('URL:', url.href);
+
+        // Переходим на форму переноса
+        window.location.href = url.href;
     }
 
     function rescheduleBooking() {
@@ -1099,6 +1169,121 @@
                 <p>Не удалось загрузить историю бронирований</p>
             </div>
         `;
+    }
+
+    function startEditData(bookingId) {
+        const booking = allBookings.find(b => b.id === bookingId);
+        if (!booking) return;
+
+        // Формируем данные паломника для передачи в index.html
+        const pilgrim = {
+            last_name: booking.guest_last_name || "-",
+            first_name: booking.guest_first_name || "-",
+            gender: booking.gender || "M",
+            date_of_birth: booking.date_of_birth || "-",
+            passport_num: booking.passport_num || "-",
+            passport_expiry: booking.passport_expiry || "-",
+            iin: booking.guest_iin || "-",
+            phone: booking.client_phone || "-",
+            passport_image_path: booking.passport_image_path || null
+        };
+
+        // Кодируем данные для URL
+        const pilgrimsParam = encodeURIComponent(JSON.stringify([pilgrim]));
+
+        // Формируем URL с параметрами для редактирования
+        const url = new URL('index.html', window.location.origin);
+        url.searchParams.set('pilgrims', pilgrimsParam);
+        url.searchParams.set('mode', 'edit');
+        url.searchParams.set('booking_id', booking.id);
+
+        console.log('✏️ Открываю редактирование брони #', booking.id);
+        console.log('URL:', url.href);
+
+        // Переходим на форму редактирования
+        window.location.href = url.href;
+    }
+
+    async function startUploadPassport(bookingId) {
+        const booking = allBookings.find(b => b.id === bookingId);
+        if (!booking) return;
+
+        // Создаем input для выбора файла
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.jpg,.jpeg,.png,.pdf';
+
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                // Показываем индикатор загрузки
+                const loadingDiv = document.createElement('div');
+                loadingDiv.className = 'loading';
+                loadingDiv.innerHTML = '<div class="spinner"></div><p>⏳ Загрузка и распознавание паспорта...</p>';
+                document.body.appendChild(loadingDiv);
+
+                // Загружаем файл на сервер
+                const formData = new FormData();
+                formData.append("file", file);
+
+                const uploadRes = await fetch(`${API_URL}/api/passports/upload`, {
+                    method: "POST",
+                    body: formData,
+                    headers: {"ngrok-skip-browser-warning": "1"}
+                });
+
+                const uploadJson = await uploadRes.json();
+
+                if (!uploadRes.ok || !uploadJson.ok) {
+                    throw new Error(uploadJson.error || `Ошибка загрузки: ${uploadRes.status}`);
+                }
+
+                const passportPath = uploadJson.path;
+                console.log('✅ Паспорт загружен:', passportPath);
+
+                // Обновляем путь к паспорту в БД
+                const updateRes = await fetch(`${API_URL}/api/bookings/${bookingId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        "Content-Type": "application/json",
+                        "ngrok-skip-browser-warning": "1"
+                    },
+                    body: JSON.stringify({
+                        pilgrims: [{
+                            last_name: booking.guest_last_name,
+                            first_name: booking.guest_first_name,
+                            passport_image_path: passportPath
+                        }]
+                    })
+                });
+
+                const updateJson = await updateRes.json();
+
+                if (!updateRes.ok || !updateJson.ok) {
+                    throw new Error(updateJson.error || 'Ошибка обновления данных');
+                }
+
+                // Убираем индикатор загрузки
+                document.body.removeChild(loadingDiv);
+
+                alert('✅ Паспорт успешно загружен и сохранен!');
+
+                // Перезагружаем список бронирований
+                const user = tg.initDataUnsafe?.user;
+                await loadBookings(urlManagerId || user?.id || 0);
+
+            } catch (err) {
+                alert('❌ Ошибка загрузки паспорта: ' + err.message);
+                // Убираем индикатор загрузки если он есть
+                const loadingDiv = document.querySelector('.loading');
+                if (loadingDiv) document.body.removeChild(loadingDiv);
+            }
+        };
+
+        // Открываем диалог выбора файла
+        input.click();
     }
 
     document.getElementById('detail-modal').addEventListener('click', function(e) {

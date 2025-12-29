@@ -711,7 +711,72 @@
     let currentBookingId = editBookingId || localStorage.getItem('edit_booking_id') || null;
     let currentOldBookingId = oldBookingId || localStorage.getItem('old_booking_id') || null;
 
-    // Основной сценарий: данные приходят через URL (бот)
+    // Функция для предзаполнения формы данными брони (при редактировании)
+    async function loadBookingData(bookingId) {
+        try {
+            console.log("📥 Загрузка данных брони #" + bookingId);
+            const res = await fetch(`${API_URL}/api/bookings/${bookingId}`, {
+                headers: {"ngrok-skip-browser-warning": "1"}
+            });
+            const json = await res.json();
+
+            if (!res.ok || !json.ok) {
+                throw new Error(json.error || "Ошибка загрузки брони");
+            }
+
+            const booking = json.booking;
+            console.log("✅ Данные брони получены:", booking);
+
+            // Предзаполняем основные поля формы
+            if (booking.package_name) {
+                document.getElementById('pkg_name').innerHTML = `<option value="${booking.package_name}">${booking.package_name}</option>`;
+                document.getElementById('pkg_name').value = booking.package_name;
+                document.getElementById('pkg_name').disabled = false;
+            }
+            if (booking.sheet_name) {
+                document.getElementById('sheet_name_hidden').value = booking.sheet_name;
+                const dateMatch = booking.sheet_name.match(/(\d{1,2})\.(\d{1,2})/);
+                if (dateMatch) {
+                    document.getElementById('date_input').value = `${dateMatch[1]}.${dateMatch[2]}`;
+                }
+            }
+            if (booking.table_id) document.getElementById('table_id_hidden').value = booking.table_id;
+
+            // Город вылета
+            if (booking.departure_city) {
+                const cityRadio = document.querySelector(`input[name="departure_city"][value="${booking.departure_city}"]`);
+                if (cityRadio) cityRadio.checked = true;
+            }
+
+            // Размещение и питание
+            if (booking.room_type) document.getElementById('room_type').value = booking.room_type;
+            if (booking.meal_type) document.getElementById('meal_type').value = booking.meal_type;
+            if (booking.visa_status) document.getElementById('visa_status').value = booking.visa_status;
+            if (booking.avia) document.getElementById('avia').value = booking.avia;
+
+            // Финансы
+            if (booking.price) document.getElementById('price').value = booking.price;
+            if (booking.amount_paid) document.getElementById('amount_paid').value = booking.amount_paid;
+            if (booking.exchange_rate) document.getElementById('exchange_rate').value = booking.exchange_rate;
+            if (booking.discount) document.getElementById('discount').value = booking.discount;
+            if (booking.contract_number) document.getElementById('contract_number').value = booking.contract_number;
+
+            // Дополнительные поля
+            if (booking.region) document.getElementById('region').value = booking.region;
+            if (booking.source) document.getElementById('source').value = booking.source;
+            if (booking.train) document.getElementById('train').value = booking.train;
+            if (booking.manager_name_text) document.getElementById('manager_name_text').value = booking.manager_name_text;
+            if (booking.comment && booking.comment !== '-') document.getElementById('comment').value = booking.comment;
+
+            return booking;
+        } catch (e) {
+            console.error("❌ Ошибка загрузки данных брони:", e);
+            alert("Ошибка загрузки данных брони: " + e.message);
+            return null;
+        }
+    }
+
+    // Основной сценарий: данные приходят через URL (бот или WebApp)
     if (pRaw) {
         try {
             const pilgrims = JSON.parse(decodeURIComponent(pRaw));
@@ -732,6 +797,11 @@
 
             console.log("📋 Финальный pilgrimsData:", pilgrimsData);
             renderPilgrims();
+
+            // Если режим редактирования - загружаем полные данные брони
+            if (currentMode === 'edit' && currentBookingId) {
+                loadBookingData(currentBookingId);
+            }
         } catch(e) {
             console.error("❌ Ошибка парсинга данных:", e);
             alert("Ошибка загрузки данных паспортов");

@@ -877,6 +877,60 @@ async def cancel_booking_endpoint(booking_id: int):
         )
 
 
+@app.get("/api/care/passport-photo/{booking_id}")
+async def get_passport_photo(booking_id: int):
+    """
+    Получение фото паспорта по ID брони
+    """
+    try:
+        from fastapi.responses import FileResponse
+        import os
+
+        booking = await get_booking_by_id(booking_id)
+        if not booking:
+            return JSONResponse(
+                status_code=404,
+                content={"ok": False, "error": "Бронь не найдена"}
+            )
+
+        if not booking.passport_image_path:
+            return JSONResponse(
+                status_code=404,
+                content={"ok": False, "error": "Фото паспорта не найдено"}
+            )
+
+        # Путь к файлу паспорта
+        file_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "tmp",
+            "uploads",
+            booking.passport_image_path
+        )
+
+        if not os.path.exists(file_path):
+            return JSONResponse(
+                status_code=404,
+                content={"ok": False, "error": "Файл паспорта не найден на диске"}
+            )
+
+        # Возвращаем файл
+        return FileResponse(
+            path=file_path,
+            media_type="application/octet-stream",
+            filename=booking.passport_image_path
+        )
+
+    except Exception as e:
+        print(f"❌ Ошибка получения фото паспорта: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": str(e)}
+        )
+
+
 @app.get("/api/bookings/{booking_id}")
 async def get_booking_details(booking_id: int):
     """
@@ -889,7 +943,7 @@ async def get_booking_details(booking_id: int):
                 status_code=404,
                 content={"ok": False, "error": "Бронь не найдена"}
             )
-        
+
         return {
             "ok": True,
             "booking": {
@@ -904,16 +958,29 @@ async def get_booking_details(booking_id: int):
                 "client_phone": booking.client_phone,
                 "package_name": booking.package_name,
                 "sheet_name": booking.sheet_name,
+                "table_id": booking.table_id,
                 "sheet_row_number": booking.sheet_row_number,
+                "departure_city": booking.departure_city,
                 "room_type": booking.room_type,
                 "meal_type": booking.meal_type,
                 "price": booking.price,
                 "amount_paid": booking.amount_paid,
+                "exchange_rate": booking.exchange_rate,
+                "discount": booking.discount,
+                "contract_number": booking.contract_number,
                 "visa_status": booking.visa_status,
-                "status": booking.status
+                "avia": booking.avia,
+                "train": booking.train,
+                "region": booking.region,
+                "source": booking.source,
+                "manager_name_text": booking.manager_name_text,
+                "comment": booking.comment,
+                "passport_image_path": booking.passport_image_path,
+                "status": booking.status,
+                "created_at": booking.created_at.isoformat() if booking.created_at else None
             }
         }
-        
+
     except Exception as e:
         return JSONResponse(
             status_code=500,
