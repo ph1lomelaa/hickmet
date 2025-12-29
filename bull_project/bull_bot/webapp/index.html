@@ -488,9 +488,9 @@
         <div class="col">
             <label>VISA действующая:</label>
             <select id="visa_status">
-                <option value="UMRAH VISA">NO VISA</option>
+                <option value="-">NO VISA</option>
                 <option value="TOUR VISA">TOUR VISA</option>
-                <option value="NO VISA">UMRAH VISA</option>
+                <option value="UMRAH VISA">UMRAH VISA</option>
             </select>
         </div>
     </div>
@@ -692,7 +692,12 @@
         if (!res.ok || !json.ok) {
             throw (json.error || `Ошибка сервера ${res.status}`);
         }
-        return json.path;
+
+        // Возвращаем весь объект с данными паспорта
+        return {
+            path: json.path,
+            data: json.data || {}
+        };
     }
 
     // --- ПАРСИНГ ТУРИСТОВ ИЗ URL ---
@@ -846,13 +851,52 @@
 
                 try {
                     e.target.disabled = true;
-                    e.target.insertAdjacentHTML('afterend', '<div class="file-info">⏳ Загрузка...</div>');
-                    const path = await uploadPassport(file);
-                    pilgrimsData[idx].passport_image_path = path;
-                    renderPilgrims(); // перерисовать для отображения имени файла
+                    e.target.insertAdjacentHTML('afterend', '<div class="file-info">⏳ Загрузка и распознавание...</div>');
+
+                    const result = await uploadPassport(file);
+
+                    console.log("📄 Паспорт загружен:", result.path);
+                    console.log("📋 Распознанные данные:", result.data);
+
+                    // Обновляем путь к файлу
+                    pilgrimsData[idx].passport_image_path = result.path;
+
+                    // Обновляем распознанные данные (ВСЕ КРОМЕ имени и фамилии)
+                    if (result.data) {
+                        if (result.data.gender) {
+                            pilgrimsData[idx].gender = result.data.gender;
+                            console.log("✅ Пол обновлен:", result.data.gender);
+                        }
+                        if (result.data.date_of_birth) {
+                            pilgrimsData[idx].date_of_birth = result.data.date_of_birth;
+                            console.log("✅ Дата рождения обновлена:", result.data.date_of_birth);
+                        }
+                        if (result.data.passport_num) {
+                            pilgrimsData[idx].passport_num = result.data.passport_num;
+                            console.log("✅ Номер паспорта обновлен:", result.data.passport_num);
+                        }
+                        if (result.data.passport_expiry) {
+                            pilgrimsData[idx].passport_expiry = result.data.passport_expiry;
+                            console.log("✅ Срок действия обновлен:", result.data.passport_expiry);
+                        }
+                        if (result.data.iin) {
+                            pilgrimsData[idx].iin = result.data.iin;
+                            console.log("✅ ИИН обновлен:", result.data.iin);
+                        }
+                    }
+
+                    // Перерисовываем для отображения обновленных данных
+                    renderPilgrims();
+
+                    console.log("✅ Данные паломника обновлены из паспорта");
                 } catch (err) {
                     alert("Ошибка загрузки файла: " + err);
                     e.target.value = "";
+                    // Удаляем индикатор загрузки при ошибке
+                    const loadingInfo = e.target.nextElementSibling;
+                    if (loadingInfo && loadingInfo.classList.contains('file-info')) {
+                        loadingInfo.remove();
+                    }
                 }
             });
         });
@@ -896,8 +940,19 @@
                 }
             }
 
+            // Город вылета (radio buttons)
+            if (booking.departure_city) {
+                const cityRadio = document.querySelector(`input[name="departure_city"][value="${booking.departure_city}"]`);
+                if (cityRadio) cityRadio.checked = true;
+            }
+
+            // Основные поля
             if (booking.price) {
                 document.getElementById('price').value = booking.price;
+            }
+
+            if (booking.amount_paid) {
+                document.getElementById('amount_paid').value = booking.amount_paid;
             }
 
             if (booking.room_type) {
@@ -908,11 +963,45 @@
                 document.getElementById('meal_type').value = booking.meal_type;
             }
 
-            if (booking.manager_name) {
-                document.getElementById('manager_name_text').value = booking.manager_name;
+            if (booking.visa_status) {
+                document.getElementById('visa_status').value = booking.visa_status;
             }
 
-            if (booking.comment) {
+            if (booking.avia) {
+                document.getElementById('avia').value = booking.avia;
+            }
+
+            // Дополнительные поля
+            if (booking.region) {
+                document.getElementById('region').value = booking.region;
+            }
+
+            if (booking.contract_number) {
+                document.getElementById('contract_number').value = booking.contract_number;
+            }
+
+            if (booking.exchange_rate) {
+                document.getElementById('exchange_rate').value = booking.exchange_rate;
+            }
+
+            if (booking.discount) {
+                document.getElementById('discount').value = booking.discount;
+            }
+
+            if (booking.source) {
+                document.getElementById('source').value = booking.source;
+            }
+
+            if (booking.train) {
+                document.getElementById('train').value = booking.train;
+            }
+
+            // Менеджер и комментарий
+            if (booking.manager_name_text) {
+                document.getElementById('manager_name_text').value = booking.manager_name_text;
+            }
+
+            if (booking.comment && booking.comment !== '-') {
                 document.getElementById('comment').value = booking.comment;
             }
 
@@ -1015,9 +1104,6 @@
 
         console.log("📤 Отправка данных на сервер:", pilgrims);
 
-        const visaValue = document.getElementById('visa_status').value;
-        const normalizedVisa = visaValue === 'NO VISA' ? '-' : visaValue;
-
         const data = {
             pilgrims: pilgrims,
             package_name: document.getElementById('pkg_name').value,
@@ -1026,7 +1112,7 @@
             departure_city: document.querySelector('input[name="departure_city"]:checked').value,
             room_type: document.getElementById('room_type').value,
             meal_type: document.getElementById('meal_type').value,
-            visa_status: normalizedVisa,
+            visa_status: document.getElementById('visa_status').value,
             avia: document.getElementById('avia').value,
             price: document.getElementById('price').value,
             amount_paid: document.getElementById('amount_paid').value,
