@@ -40,7 +40,8 @@ def admin_kb():
         [InlineKeyboardButton(text="Создать бронь", callback_data="create_booking")],
         [InlineKeyboardButton(text="Найти паломника", web_app=WebAppInfo(url=CARE_SEARCH_URL))],
         [InlineKeyboardButton(text="⚠️ Запросы на одобрение", web_app=WebAppInfo(url=ADMIN_REQUESTS_URL))],
-        [InlineKeyboardButton(text="Запросы 4U", callback_data="admin_stats")]
+        [InlineKeyboardButton(text="Запросы 4U", callback_data="admin_stats")],
+        [InlineKeyboardButton(text="🔔 Настройки уведомлений", callback_data="admin_notify_menu")]
     ])
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder
