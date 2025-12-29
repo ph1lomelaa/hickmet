@@ -1,3 +1,5 @@
+import random
+import colorsys
 from bull_project.bull_bot.core.google_sheets.client import (
     get_google_client,
     get_worksheet_by_title,
@@ -39,6 +41,21 @@ async def save_group_booking(group_data: list, common_data: dict, placement_mode
         updates = []
         cols = None
         merge_tasks = []
+        color_tasks = []
+        price_tasks = []
+
+        # Пастельный цвет для всей группы (один цвет на всех)
+        seed_base = "".join([
+            common_data.get("package_name", ""),
+            common_data.get("room_type", ""),
+            str(len(group_data))
+        ])
+        rnd = random.Random(seed_base)
+        h = rnd.random()
+        s = 0.35
+        v = 0.95
+        r, g, b = colorsys.hsv_to_rgb(h, s, v)
+        group_color = {"red": r, "green": g, "blue": b}
 
         # 🔥 ИСПРАВЛЕНИЕ: Используем групповое размещение если паломников больше 1 или режим не specific_row
         if not specific_row and len(group_data) > 0:
@@ -70,7 +87,12 @@ async def save_group_booking(group_data: list, common_data: dict, placement_mode
             # Записываем данные для каждого паломника
             for i, (person_passport, row_idx) in enumerate(zip(group_data, saved_rows)):
                 full_data = {**common_data, **person_passport}
-                _prepare_updates(updates, row_idx, cols, full_data)
+                _prepare_updates(updates, price_tasks, row_idx, cols, full_data)
+                # Планируем окраску имени/фамилии
+                for key in ("last_name", "first_name"):
+                    if key in cols:
+                        a1 = row_col_to_a1(row_idx, cols[key] + 1)
+                        color_tasks.append(a1)
 
         elif specific_row:
             # Старая логика для specific_row (ручное размещение)
@@ -85,12 +107,29 @@ async def save_group_booking(group_data: list, common_data: dict, placement_mode
                 row_idx = specific_row + i
                 saved_rows.append(row_idx)
                 full_data = {**common_data, **person_passport}
-                _prepare_updates(updates, row_idx, cols, full_data)
+                _prepare_updates(updates, price_tasks, row_idx, cols, full_data)
+                for key in ("last_name", "first_name"):
+                    if key in cols:
+                        a1 = row_col_to_a1(row_idx, cols[key] + 1)
+                        color_tasks.append(a1)
         else:
             print(f"❌ Пустой список паломников")
             return []
 
         if updates: ws.batch_update(updates)
+        # Применяем окраску имен/фамилий (один цвет на группу)
+        for a1 in color_tasks:
+            try:
+                ws.format(a1, {"backgroundColor": group_color, "textFormat": {"bold": False}})
+            except Exception as e:
+                print(f"⚠️ Не удалось окрасить {a1}: {e}")
+        # Форматируем цену и оплату
+        for row_idx, col_idx in price_tasks:
+            a1 = row_col_to_a1(row_idx, col_idx)
+            try:
+                ws.format(a1, {"numberFormat": {"type": "CURRENCY", "pattern": "[$$]#,##0"}})
+            except Exception as e:
+                print(f"⚠️ Не удалось применить формат цены для {a1}: {e}")
         if merge_tasks:
             for m_range in merge_tasks:
                 try: ws.merge_cells(m_range, merge_type='MERGE_ALL')
@@ -119,7 +158,7 @@ def do_transform(ws, updates, merge_tasks, all_values, start_idx, r_col, col_let
         if start_idx - 1 + k < len(all_values):
             all_values[start_idx - 1 + k][r_col] = values[k][0]
 
-def _prepare_updates(updates_list, row_idx, cols, data):
+def _prepare_updates(updates_list, price_tasks, row_idx, cols, data):
     # Используем правильные ключи, которые приходят из паспортных данных
     mapping = {
         'last_name': data.get('Last Name', '') or data.get('guest_last_name', ''),
@@ -148,7 +187,17 @@ def _prepare_updates(updates_list, row_idx, cols, data):
         if col_key in cols:
             val_str = str(value).strip()
             if not val_str or val_str in ["-", "skip", "None"]: continue
-            updates_list.append({'range': f"{row_col_to_a1(row_idx, cols[col_key] + 1)}", 'values': [[val_str]]})
+            # Цена и оплата — записываем как число и отмечаем для форматирования
+            if col_key in ("price", "amount_paid"):
+                clean = val_str.replace("$", "").replace(" ", "").replace(",", "")
+                try:
+                    num_val = float(clean)
+                    price_tasks.append((row_idx, cols[col_key] + 1))
+                    updates_list.append({'range': f"{row_col_to_a1(row_idx, cols[col_key] + 1)}", 'values': [[num_val]]})
+                except:
+                    updates_list.append({'range': f"{row_col_to_a1(row_idx, cols[col_key] + 1)}", 'values': [[val_str]]})
+            else:
+                updates_list.append({'range': f"{row_col_to_a1(row_idx, cols[col_key] + 1)}", 'values': [[val_str]]})
 
 async def save_booking_smart(booking_data):
     passport_data = {
