@@ -46,6 +46,7 @@ class BookingFlow(StatesGroup):
     waiting_count = State()
     waiting_passport = State()
     waiting_manual_name = State()
+    choosing_gender = State()  # Выбор пола после текстового ввода
 
     # Состояние ожидания данных из формы (ОБЯЗАТЕЛЬНО!)
     waiting_web_app_data = State()
@@ -321,26 +322,6 @@ async def process_passport_text(message: Message, state: FSMContext):
     last_name = parts[0].upper()
     first_name = " ".join(parts[1:]).upper()
 
-    # Создаем минимальный набор данных паспорта
-    p_data = {
-        'Last Name': last_name,
-        'First Name': first_name,
-        'Gender': 'M',  # По умолчанию, можно будет изменить в форме
-        'Date of Birth': '-',
-        'Document Number': '-',
-        'Document Expiration': '-',
-        'IIN': '-',
-        'passport_image_path': None,  # Нет паспорта
-        # Snake_case поля для writer.py
-        'last_name': last_name,
-        'first_name': first_name,
-        'gender': 'M',
-        'dob': '-',
-        'doc_num': '-',
-        'doc_exp': '-',
-        'iin': '-',
-    }
-
     print(f"\n{'='*60}")
     print(f"✍️ ТЕКСТОВЫЙ ВВОД (паломник {curr}):")
     print(f"{'='*60}")
@@ -349,13 +330,74 @@ async def process_passport_text(message: Message, state: FSMContext):
     print(f"  📸 Паспорт: НЕТ (введено вручную)")
     print(f"{'='*60}\n")
 
+    # Сохраняем имя во временные данные
+    await state.update_data(temp_text_name={'last_name': last_name, 'first_name': first_name})
+
+    # Показываем кнопки выбора пола
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="👨 Мужской (M)", callback_data="gender:M"),
+            InlineKeyboardButton(text="👩 Женский (F)", callback_data="gender:F")
+        ]
+    ])
+
     await message.answer(
         f"✅ Принято: <b>{last_name} {first_name}</b>\n\n"
-        "⚠️ Остальные данные (дата рождения, паспорт) нужно будет заполнить в форме",
+        "Выберите пол:",
+        reply_markup=keyboard,
         parse_mode="HTML"
     )
 
-    await next_step_pilgrim(message, state, p_data)
+    await state.set_state(BookingFlow.choosing_gender)
+
+@router.callback_query(F.data.startswith("gender:"))
+async def process_gender_choice(callback: CallbackQuery, state: FSMContext):
+    """Обработка выбора пола для текстового ввода"""
+    gender = callback.data.split(":")[1]  # M или F
+
+    data = await state.get_data()
+    temp_name = data.get('temp_text_name', {})
+
+    last_name = temp_name.get('last_name', '')
+    first_name = temp_name.get('first_name', '')
+
+    # Создаем полный набор данных паспорта с выбранным полом
+    p_data = {
+        'Last Name': last_name,
+        'First Name': first_name,
+        'Gender': gender,
+        'Date of Birth': '-',
+        'Document Number': '-',
+        'Document Expiration': '-',
+        'IIN': '-',
+        'passport_image_path': None,  # Нет паспорта
+        # Snake_case поля для writer.py
+        'last_name': last_name,
+        'first_name': first_name,
+        'gender': gender,
+        'dob': '-',
+        'doc_num': '-',
+        'doc_exp': '-',
+        'iin': '-',
+    }
+
+    gender_emoji = "👨" if gender == "M" else "👩"
+    gender_text = "Мужской" if gender == "M" else "Женский"
+
+    print(f"  ⚧ Пол: {gender_text} ({gender})")
+
+    await callback.message.edit_text(
+        f"✅ Принято: <b>{last_name} {first_name}</b>\n"
+        f"{gender_emoji} Пол: <b>{gender_text}</b>",
+        parse_mode="HTML"
+    )
+
+    await callback.answer()
+
+    # Продолжаем к следующему паломнику или форме
+    await next_step_pilgrim(callback.message, state, p_data)
 
 @router.message(BookingFlow.waiting_manual_name)
 async def manual_name(message: Message, state: FSMContext):
