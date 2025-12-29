@@ -417,7 +417,7 @@ async def next_step_pilgrim(message: Message, state: FSMContext, p_data):
         next_num = data['current_pilgrim'] + 1
         await message.answer(
             f"✅ Ок. Паспорт <b>{next_num}-го</b> паломника:\n\n"
-            f"<i>Если НЕТ паспорта, напишите текстом ФАМИЛИЯ ИМЯ:\n"
+            f"<i>Если нет паспорта, напишите текстом:\n"
             f"ФАМИЛИЯ ИМЯ</i>",
             parse_mode="HTML"
         )
