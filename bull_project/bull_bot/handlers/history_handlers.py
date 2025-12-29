@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
 from contextlib import suppress
 
@@ -388,7 +388,7 @@ async def start_edit(call: CallbackQuery, state: FSMContext):
 
 # === ТЕКСТОВОЕ ПОДТВЕРЖДЕНИЕ "YES" ===
 @router.message(F.text)
-async def cancel_by_yes(message: CallbackQuery | any):
+async def cancel_by_yes(message: Message):
     # Фильтруем только текстовые сообщения "yes"/"YES"
     if not hasattr(message, "text"):
         return
