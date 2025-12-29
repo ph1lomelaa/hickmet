@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Бронирование Bull Project</title>
+    <title>Hickmet Premium</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="config.js"></script>
     <style>
@@ -444,8 +444,7 @@
 <body>
 
 <div class="app-header">
-    <h1>🕌 Бронирование Умры</h1>
-    <p>Bull Project - Система бронирования</p>
+    <h1>Бронирование Умры</h1>
 </div>
 
 <div id="step_1">
@@ -455,7 +454,7 @@
     </div>
 
     <div class="smart-box">
-        <label><span class="icon">📅</span>1. Дата вылета:</label>
+        <label><span class="icon"></span>1. Дата вылета:</label>
         <div class="date-search">
             <input type="text" id="date_input" placeholder="13.12">
             <button type="button" onclick="handleSearch()" class="search-btn">Найти</button>
@@ -478,20 +477,20 @@
         <label for="c_ast">Astana</label>
     </div>
 
-    <label><span class="icon">👥</span>Паломники:</label>
+    <label><span class="icon"></span>Паломники:</label>
     <div id="pilgrims-container"></div>
 
     <div class="row">
         <div class="col">
-            <label>AVIA:</label>
+            <label>AVIA запрос:</label>
             <input type="text" id="avia" placeholder="">
         </div>
         <div class="col">
-            <label>VISA:</label>
+            <label>VISA действующая:</label>
             <select id="visa_status">
-                <option value="UMRAH VISA">UMRAH VISA</option>
+                <option value="UMRAH VISA">NO VISA</option>
                 <option value="TOUR VISA">TOUR VISA</option>
-                <option value="NO VISA">NO VISA</option>
+                <option value="NO VISA">UMRAH VISA</option>
             </select>
         </div>
     </div>
@@ -500,18 +499,20 @@
         <div class="col">
             <label>Тип номера:</label>
             <select id="room_type">
-                <option value="Quad">Quadro</option>
+                <option value="Quad">Double</option>
                 <option value="Triple">Triple</option>
-                <option value="Double">Double</option>
+                <option value="Double">Quadro</option>
                 <option value="Single">Single</option>
             </select>
         </div>
         <div class="col">
             <label>Питание:</label>
             <select id="meal_type">
-                <option value="BB">BB</option>
-                <option value="HB">HB</option>
-                <option value="FB">FB</option>
+                <option value="BB">HB</option>
+                <option value="HB">BB</option>
+                <option value="FB">INF</option>
+                <option value="FB">CHD</option>
+                <option value="FB">RO</option>
             </select>
         </div>
     </div>
@@ -566,7 +567,7 @@
             <label>Источник:</label>
             <input type="text" id="source" placeholder="">
 
-            <label>🚆 Поезд:</label>
+            <label>Поезд:</label>
             <select id="train">
                 <option value="-">Нет</option>
                 <option value="YES">Да</option>
@@ -575,7 +576,7 @@
     </details>
 
     <label>Менеджер:</label>
-    <input type="text" id="manager_name_text" readonly style="background: var(--bg-secondary);">
+    <input type="text" id="manager_name_text" placeholder="Введите имя менеджера...">
     
     <label>Комментарий:</label>
     <textarea id="comment" rows="3" placeholder="Дополнительная информация..."></textarea>
@@ -592,7 +593,7 @@
     </div>
 
     <div class="smart-box">
-        <h3>🛏 Размещение</h3>
+        <h3>Размещение</h3>
 
         <div id="group_logic" style="display: none; margin-bottom: 20px;">
             <label>Тип размещения группы:</label>
@@ -612,8 +613,6 @@
             <input type="radio" name="place_method" id="meth_pick" value="pick" onchange="updateUI()">
             <label for="meth_pick">Подселить (Выбрать комнату)</label>
 
-            <input type="radio" name="place_method" id="meth_man" value="manual" onchange="updateUI()">
-            <label for="meth_man"> Конкретная строка</label>
         </div>
 
         <div id="room_list_div" style="display: none; margin-top: 20px;">
@@ -641,6 +640,7 @@
 
     const API_URL = window.BULL_API_URL;
     let pilgrimsData = [];
+    let uploadedPassports = {}; // idx -> path
 
     // --- ПОИСК ПАКЕТОВ ---
     async function handleSearch() {
@@ -678,12 +678,40 @@
         document.getElementById('table_id_hidden').value = opt.dataset.table;
     };
 
+    async function uploadPassport(file) {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const res = await fetch(`${API_URL}/api/passports/upload`, {
+            method: "POST",
+            body: formData,
+            headers: {"ngrok-skip-browser-warning":"1"}
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+            throw (json.error || `Ошибка сервера ${res.status}`);
+        }
+        return json.path;
+    }
+
     // --- ПАРСИНГ ТУРИСТОВ ИЗ URL ---
     const urlParams = new URLSearchParams(window.location.search);
     const pRaw = urlParams.get('pilgrims');
+    const modeParam = urlParams.get('mode');
+    const editBookingId = urlParams.get('booking_id');
+    const oldBookingId = urlParams.get('old_booking_id');
 
-    console.log("📥 URL параметр pilgrims:", pRaw);
+    console.log("📥 URL параметры:");
+    console.log("   pilgrims:", pRaw ? "есть данные" : "нет");
+    console.log("   mode:", modeParam);
+    console.log("   booking_id:", editBookingId);
+    console.log("   old_booking_id:", oldBookingId);
 
+    let currentMode = modeParam || localStorage.getItem('mode') || 'create';
+    let currentBookingId = editBookingId || localStorage.getItem('edit_booking_id') || null;
+    let currentOldBookingId = oldBookingId || localStorage.getItem('old_booking_id') || null;
+
+    // Основной сценарий: данные приходят через URL (бот)
     if (pRaw) {
         try {
             const pilgrims = JSON.parse(decodeURIComponent(pRaw));
@@ -708,6 +736,64 @@
             console.error("❌ Ошибка парсинга данных:", e);
             alert("Ошибка загрузки данных паспортов");
         }
+    } else {
+        // Фолбек для переноса или редактирования из истории: читаем данные из localStorage
+        const isReschedule = localStorage.getItem('is_reschedule') === 'true';
+        const rescheduleDataRaw = localStorage.getItem('reschedule_data');
+        const isEdit = localStorage.getItem('is_edit') === 'true';
+        const editDataRaw = localStorage.getItem('edit_data');
+
+        if (isReschedule && rescheduleDataRaw) {
+            try {
+                const p = JSON.parse(rescheduleDataRaw);
+                pilgrimsData = [{
+                    name: `${p.last_name || '-'} ${p.first_name || '-'}`,
+                    last_name: p.last_name || "-",
+                    first_name: p.first_name || "-",
+                    phone: p.phone || "-",
+                    passport_num: p.passport_num || "-",
+                    date_of_birth: p.date_of_birth || "-",
+                    gender: p.gender || "M",
+                    passport_expiry: p.passport_expiry || "-",
+                    iin: p.iin || "-",
+                    passport_image_path: p.passport_image_path || null
+                }];
+                console.log("♻️ Загрузка переноса из localStorage:", pilgrimsData);
+                renderPilgrims();
+            } catch (e) {
+                console.error("❌ Ошибка парсинга переноса:", e);
+                alert("Ошибка загрузки данных переноса");
+            } finally {
+                localStorage.removeItem('is_reschedule');
+                localStorage.removeItem('reschedule_data');
+                localStorage.removeItem('reschedule_booking_id');
+            }
+        } else if (isEdit && editDataRaw) {
+            try {
+                const p = JSON.parse(editDataRaw);
+                currentMode = 'edit';
+                currentBookingId = localStorage.getItem('edit_booking_id') || null;
+                pilgrimsData = [{
+                    name: `${p.last_name || '-'} ${p.first_name || '-'}`,
+                    last_name: p.last_name || "-",
+                    first_name: p.first_name || "-",
+                    phone: p.phone || "-",
+                    passport_num: p.passport_num || "-",
+                    date_of_birth: p.date_of_birth || "-",
+                    gender: p.gender || "M",
+                    passport_expiry: p.passport_expiry || "-",
+                    iin: p.iin || "-",
+                    passport_image_path: p.passport_image_path || null
+                }];
+                console.log("✏️ Загрузка редактирования из localStorage:", pilgrimsData);
+                renderPilgrims();
+            } catch (e) {
+                console.error("❌ Ошибка парсинга редактирования:", e);
+                alert("Ошибка загрузки данных для редактирования");
+            } finally {
+                // Не чистим edit-флаги сразу, чтобы можно было повторно открыть при возврате
+            }
+        }
     }
 
     function renderPilgrims() {
@@ -721,6 +807,11 @@
                     </button>
                 </div>
                 <input type="tel" class="phone-input" data-idx="${idx}" placeholder="Номер телефона" value="${p.phone !== '-' ? p.phone : ''}">
+                <div class="upload-wrapper">
+                    <label>Фото паспорта (jpg/png/pdf):</label>
+                    <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-idx="${idx}" class="passport-file">
+                    ${p.passport_image_path ? `<div class="file-info">Текущий файл: ${p.passport_image_path}</div>` : ''}
+                </div>
 
                 <div id="passport_${idx}" class="passport-data">
                     <div class="passport-field"><strong>Фамилия:</strong> <span>${p.last_name}</span></div>
@@ -740,6 +831,24 @@
                 pilgrimsData[idx].phone = e.target.value;
             });
         });
+        document.querySelectorAll('.passport-file').forEach(input => {
+            input.addEventListener('change', async (e) => {
+                const idx = e.target.dataset.idx;
+                const file = e.target.files[0];
+                if (!file) return;
+
+                try {
+                    e.target.disabled = true;
+                    e.target.insertAdjacentHTML('afterend', '<div class="file-info">⏳ Загрузка...</div>');
+                    const path = await uploadPassport(file);
+                    pilgrimsData[idx].passport_image_path = path;
+                    renderPilgrims(); // перерисовать для отображения имени файла
+                } catch (err) {
+                    alert("Ошибка загрузки файла: " + err);
+                    e.target.value = "";
+                }
+            });
+        });
     }
 
     function togglePassportData(idx) {
@@ -747,9 +856,10 @@
         el.classList.toggle('visible');
     }
 
-    if (tg.initDataUnsafe?.user) {
-        document.getElementById('manager_name_text').value = tg.initDataUnsafe.user.first_name;
-    }
+    // Поле "Менеджер" теперь заполняется вручную
+    // if (tg.initDataUnsafe?.user) {
+    //     document.getElementById('manager_name_text').value = tg.initDataUnsafe.user.first_name;
+    // }
 
     function goToStep2() {
         const pkg = document.getElementById('pkg_name').value;
@@ -856,13 +966,40 @@
             manager_id: tg.initDataUnsafe?.user?.id || 0
         };
 
+        console.log("📤 Режим отправки:", currentMode);
+        console.log("   booking_id:", currentBookingId);
+        console.log("   old_booking_id:", currentOldBookingId);
+
         try {
             const btn = document.getElementById('finish_btn');
             btn.disabled = true;
-            btn.innerHTML = '<span class="icon">⏳</span> Записываю...';
 
-            const res = await fetch(`${API_URL}/api/bookings/submit`, {
-                method: "POST",
+            // Определяем endpoint и метод в зависимости от режима
+            let endpoint, method, btnText;
+
+            if (currentMode === 'edit' && currentBookingId) {
+                // Режим редактирования - обновляем существующую бронь
+                endpoint = `${API_URL}/api/bookings/${currentBookingId}`;
+                method = "PATCH";
+                btnText = '<span class="icon">⏳</span> Сохраняю изменения...';
+                console.log("✏️ РЕДАКТИРОВАНИЕ брони #" + currentBookingId);
+            } else {
+                // Режим создания или переноса - создаем новую бронь
+                endpoint = `${API_URL}/api/bookings/submit`;
+                method = "POST";
+                btnText = '<span class="icon">⏳</span> Записываю...';
+
+                if (currentMode === 'reschedule' && currentOldBookingId) {
+                    console.log("♻️ ПЕРЕНОС брони (старая #" + currentOldBookingId + ")");
+                } else {
+                    console.log("➕ СОЗДАНИЕ новой брони");
+                }
+            }
+
+            btn.innerHTML = btnText;
+
+            const res = await fetch(endpoint, {
+                method,
                 headers: {
                     "Content-Type": "application/json",
                     "ngrok-skip-browser-warning": "1"
@@ -880,12 +1017,21 @@
                 return;
             }
 
-            // Показываем сообщение об успехе
-            alert("✅ Бронь успешно размещена!");
+            // Показываем сообщение об успехе в зависимости от режима
+            let successMessage;
+            if (currentMode === 'edit') {
+                successMessage = "✅ Изменения успешно сохранены!";
+            } else if (currentMode === 'reschedule') {
+                successMessage = "✅ Перенос завершен успешно!";
+            } else {
+                successMessage = "✅ Бронь успешно размещена!";
+            }
+            alert(successMessage);
 
             // Отправляем событие в Telegram для возврата в главное меню
             tg.sendData(JSON.stringify({
                 action: "booking_completed",
+                mode: currentMode,
                 saved_rows: json.saved_rows || []
             }));
 
