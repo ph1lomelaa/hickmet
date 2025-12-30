@@ -1494,6 +1494,7 @@ async def care_search_tourist(query: str = Query(..., min_length=1)):
                 "phone": booking.client_phone or "-",
                 "package_name": booking.package_name or "-",
                 "sheet_name": booking.sheet_name or "-",
+                "placement_type": booking.placement_type or "-",
                 "room_type": booking.room_type or "-",
                 "meal_type": booking.meal_type or "-",
                 "price": booking.price or "-",

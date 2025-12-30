@@ -403,6 +403,13 @@
             container.classList.remove('hidden');
             container.innerHTML = '';
 
+            // Карта перевода типов размещения
+            const placementMap = {
+                "family": "👪 Семья (вместе)",
+                "separate": "🚻 Раздельно (по полу)",
+                "solo": "🧍 Одиночное"
+            };
+
             results.forEach((booking, index) => {
                 const card = document.createElement('div');
                 card.className = 'booking-card';
@@ -412,6 +419,7 @@
                 const statusText = status === 'cancelled' ? 'Отменена' : 'Активная';
 
                 const guestName = `${booking.last_name} ${booking.first_name}`.trim() || 'Без имени';
+                const placement = placementMap[booking.placement_type] || (booking.placement_type || '-');
 
                 let html = `
                     <div class="booking-header">
@@ -453,6 +461,9 @@
                         </div>
                         <div class="booking-detail">
                             📅 Дата: <strong>${booking.sheet_name}</strong>
+                        </div>
+                        <div class="booking-detail">
+                            👥 Размещение: <strong>${placement}</strong>
                         </div>
                         <div class="booking-detail">
                             🏠 Комната: <strong>${booking.room_type}</strong>

@@ -567,6 +567,13 @@
                 return;
             }
 
+            // Карта перевода типов размещения
+            const placementMap = {
+                "family": "👪 Семья (вместе)",
+                "separate": "🚻 Раздельно (по полу)",
+                "solo": "🧍 Одиночное"
+            };
+
             const cards = filtered.map((booking, index) => {
                 const status = normalizeStatus(booking.status);
                 const statusClass = status === 'cancelled'
@@ -586,7 +593,9 @@
                 const guestName = guestNameRaw ? guestNameRaw : 'Без имени';
                 const packageName = safeValue(booking.package_name);
                 const sheetName = safeValue(booking.sheet_name);
-                const roomType = safeValue(booking.room_type || booking.placement_type);
+                const roomType = safeValue(booking.room_type);
+                const placementTypeRaw = booking.placement_type;
+                const placementType = placementMap[placementTypeRaw] || safeValue(placementTypeRaw);
                 const phone = safeValue(booking.client_phone);
                 const price = safeValue(booking.price);
                 const priceLabel = price === '-' ? '-' : `${price} тг`;
@@ -633,6 +642,7 @@
                             <div class="booking-detail">Телефон: <strong>${phone}</strong></div>
                             <div class="booking-detail">Пакет: <strong>${packageName}</strong></div>
                             <div class="booking-detail">Дата: <strong>${sheetName}</strong></div>
+                            <div class="booking-detail">Размещение: <strong>${placementType}</strong></div>
                             <div class="booking-detail">Комната: <strong>${roomType}</strong></div>
                             <div class="booking-detail">Строка листа: <strong>${sheetRow}</strong></div>
                         </div>
