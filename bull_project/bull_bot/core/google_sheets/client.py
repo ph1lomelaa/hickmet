@@ -9,12 +9,7 @@ logger = logging.getLogger(__name__)
 _tables_cache = None
 
 def get_accessible_tables(use_cache=True) -> dict:
-    """
-    Возвращает словарь всех доступных таблиц: {"Название": "ID"}
- 
-    Если USE_TEST_TABLE=true, возвращает только тестовую таблицу.
-    В противном случае возвращает все доступные таблицы.
-    """
+
     global _tables_cache
 
     # Импортируем константы
@@ -91,31 +86,57 @@ def get_packages_from_sheet(spreadsheet_id: str, sheet_name: str) -> dict:
         ss = client.open_by_key(spreadsheet_id)
         ws = _get_worksheet_by_title(ss, sheet_name)
 
-        # ОПТИМИЗАЦИЯ: Не качаем get_all_values(), качаем только левую часть
-        # Это ускоряет процесс в 5-10 раз для широких таблиц
-        data = ws.get('A1:B200')
+        # ОПТИМИЗАЦИЯ: Расширили до D чтобы видеть "Type of room"
+        data = ws.get('A1:D200')
 
         packages = {}
-        # Ключевые слова для распознавания строк с пакетами.
-        # Добавлены варианты для Рамадана/месяцев, чтобы находить даты вида 07.03.
-        keywords = [
+
+        # СПОСОБ 1 (ПРИОРИТЕТ): Старая логика - поиск по ключевым словам
+        package_keywords = [
             "niyet", "hikma", "izi", "4u", "premium", "econom",
             "стандарт", "эконом", "comfort",
             "ramadan", "рамадан", "ramazan", "ramad"
         ]
 
         for idx, row in enumerate(data, start=1):
-            if not row: continue
+            if not row:
+                continue
 
             text_full = " ".join([str(x) for x in row]).lower()
 
-            if any(k in text_full for k in keywords):
-                # Берем название из первой непустой ячейки
+            if any(k in text_full for k in package_keywords):
                 raw_name = row[0] if row and row[0] else (row[1] if len(row) > 1 else "Unknown")
                 clean_name = str(raw_name).strip().replace("\n", " ")
-
                 if len(clean_name) > 3:
                     packages[idx] = clean_name
+
+        # СПОСОБ 2 (ФОЛЛБЭК): Если ничего не нашли - ищем по заголовкам
+        if not packages:
+            import re
+            header_keywords = ["№", "avia", "visa", "type of room", "тип комнаты"]
+            # Паттерн даты: dd.mm или d.mm или dd.m
+            date_pattern = re.compile(r'^\d{1,2}\.\d{1,2}')
+
+            for idx, row in enumerate(data, start=1):
+                if not row:
+                    continue
+
+                text_full = " ".join([str(x) for x in row]).lower()
+
+                # Если нашли строку с заголовками
+                if any(k in text_full for k in header_keywords):
+                    # Ищем название пакета выше (1-3 строки)
+                    for offset in range(1, 4):
+                        if idx - offset < 1:
+                            break
+                        prev_row = data[idx - offset - 1]
+                        if prev_row and prev_row[0]:
+                            raw_name = str(prev_row[0]).strip()
+                            # Проверяем что название начинается с даты
+                            if date_pattern.match(raw_name):
+                                clean_name = raw_name.replace("\n", " ")
+                                packages[idx] = clean_name
+                                break
 
         return packages
 
