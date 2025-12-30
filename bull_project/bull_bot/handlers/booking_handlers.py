@@ -236,7 +236,9 @@ async def process_passport(message: Message, state: FSMContext):
         # 🔥 КРИТИЧНО: Добавляем snake_case поля для writer.py
         p_data['last_name'] = p_data.get('Last Name', '-')
         p_data['first_name'] = p_data.get('First Name', '-')
-        p_data['gender'] = p_data.get('Gender', 'M')
+        # Не ставим пол по умолчанию — спросим у менеджера если OCR не распознал
+        gender_raw = (p_data.get('Gender') or "").strip().upper()
+        p_data['gender'] = gender_raw if gender_raw in ("M", "F") else None
         p_data['dob'] = p_data.get('Date of Birth', '-')
         p_data['doc_num'] = p_data.get('Document Number', '-')
         p_data['doc_exp'] = p_data.get('Document Expiration', '-')
@@ -311,7 +313,30 @@ async def process_passport(message: Message, state: FSMContext):
             )
             await state.set_state(BookingFlow.waiting_manual_name)
         else:
-            await next_step_pilgrim(message, state, p_data)
+            # Если пол не распознан, спрашиваем у менеджера
+            if gender_raw not in ("M", "F"):
+                await state.update_data(
+                    temp_p=p_data,
+                    temp_text_name={
+                        "last_name": p_data.get("last_name", "") or last_name or "-",
+                        "first_name": p_data.get("first_name", "") or first_name or "-"
+                    }
+                )
+                gender_kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="👨 Мужской", callback_data="gender:M"),
+                        InlineKeyboardButton(text="👩 Женский", callback_data="gender:F")
+                    ]
+                ])
+                await message.answer(
+                    f"✅ Принято: <b>{last_name} {first_name}</b>\n\n"
+                    "Пол не распознан. Выберите пол:",
+                    reply_markup=gender_kb,
+                    parse_mode="HTML"
+                )
+                await state.set_state(BookingFlow.choosing_gender)
+            else:
+                await next_step_pilgrim(message, state, p_data)
 
     except Exception as e:
         print(f"❌ Ошибка парсинга: {e}")
@@ -351,10 +376,9 @@ async def process_passport_text(message: Message, state: FSMContext):
     print(f"  📸 Паспорт: НЕТ (введено вручную)")
     print(f"{'='*60}\n")
 
-    # Сохраняем имя во временные данные
     await state.update_data(temp_text_name={'last_name': last_name, 'first_name': first_name})
 
-    # Показываем кнопки выбора пола
+
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -378,11 +402,12 @@ async def process_gender_choice(callback: CallbackQuery, state: FSMContext):
     gender = callback.data.split(":")[1]  # M или F
 
     data = await state.get_data()
-    temp_name = data.get('temp_text_name', {})
-    temp_p = data.get('temp_p', {})  # Берем данные паспорта если были
+    temp_name = data.get('temp_text_name', {}) or {}
+    temp_p = data.get('temp_p', {}) or {}  # Берем данные паспорта если были
 
-    last_name = temp_name.get('last_name', '')
-    first_name = temp_name.get('first_name', '')
+    # Предпочитаем имя из ручного ввода, иначе из распознанного паспорта
+    last_name = (temp_name.get('last_name') or temp_p.get('Last Name') or temp_p.get('last_name') or '').strip()
+    first_name = (temp_name.get('first_name') or temp_p.get('First Name') or temp_p.get('first_name') or '').strip()
 
     # Создаем полный набор данных паспорта с выбранным полом
     # Если есть данные из temp_p (частично распознанный паспорт), используем их
@@ -773,6 +798,19 @@ async def finalize_booking_integrated(message: Message, state: FSMContext, pilgr
 
             print(f"📝 Данные подготовлены для {last_name} {first_name}")
 
+        # 🔥 ФОРМИРОВАНИЕ ГРУППЫ: Собираем список всех ФИО из заявки
+        group_members = []
+        for rec in db_records:
+            full_name = f"{rec['guest_last_name']} {rec['guest_first_name']}".strip()
+            group_members.append(full_name or "-")
+
+        # Один и тот же состав группы сохраняем в каждую запись (JSON строка)
+        group_members_json = json.dumps(group_members, ensure_ascii=False)
+        for rec in db_records:
+            rec["group_members"] = group_members_json
+
+        print(f"👥 Группа сформирована: {group_members}")
+
         # --- 2. 🔥 СНАЧАЛА запись в Google Sheets ---
         print(f"\n📊 Запись в Google Sheets...")
         saved_rows = await save_group_booking(
@@ -1026,18 +1064,28 @@ def _format_admin_booking(booking, title: str, extra: str = "") -> str:
     }
     placement = placement_map.get((booking.placement_type or "").lower(), booking.placement_type or "-")
     created = booking.created_at.strftime("%d.%m.%Y %H:%M") if booking.created_at else "-"
+    group_members = []
+    try:
+        if booking.group_members:
+            group_members = json.loads(booking.group_members)
+    except Exception:
+        group_members = []
 
     parts = [
         f"{title}",
         f"#{booking.id} • {booking.package_name or '-'}",
         f"Лист: {booking.sheet_name or '-'} • Строка: {booking.sheet_row_number or '-'}",
         f"Размещение: {placement}",
+    ]
+    if group_members and len(group_members) > 1:
+        parts.append(f"Группа: {', '.join(group_members)}")
+    parts.extend([
         f"Комната: {booking.room_type or '-'} | Питание: {booking.meal_type or '-'}",
         f"Телефон: {booking.client_phone or '-'}",
         f"Паспорт: {booking.passport_num or '-'} (до {booking.passport_expiry or '-'})",
         f"Цена: {booking.price or '-'} | Оплачено: {booking.amount_paid or '-'}",
         f"Регион: {booking.region or '-'} | Вылет: {booking.departure_city or '-'}",
-    ]
+    ])
     if booking.visa_status and booking.visa_status != "-":
         parts.append(f"Виза: {booking.visa_status}")
     if booking.avia and booking.avia != "-":

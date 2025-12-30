@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime
 import uvicorn
 from urllib.parse import unquote_plus
@@ -428,11 +429,23 @@ async def api_bookings_submit(payload: BookingSubmitIn):
         "placement_type": payload.placement_type or "separate",
     }
 
-    # 4. Формирование данных для Google Sheets
+    # 4. Проверка пола у всех паломников
+    for pilgrim in payload.pilgrims:
+        gen = (pilgrim.gender or "").strip().upper()
+        if gen not in ("M", "F"):
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": "Укажите пол для всех паломников перед размещением"}
+            )
+
+    # 5. Формирование данных для Google Sheets
     group_data_for_sheets: List[Dict[str, Any]] = []
     db_records: List[Dict[str, Any]] = []  # 🔥 Храним данные для БД, но не записываем сразу
+    group_members: List[str] = []
 
     for pilgrim in payload.pilgrims:
+        full_name = f"{(pilgrim.last_name or '').strip()} {(pilgrim.first_name or '').strip()}".strip()
+        group_members.append(full_name or "-")
         # Данные для Sheets
         p_sheet_data = {
             # Human Readable формат
@@ -495,6 +508,11 @@ async def api_bookings_submit(payload: BookingSubmitIn):
 
         print(f"📝 Данные для БД подготовлены для {pilgrim.last_name}")
 
+    # Один и тот же состав группы сохраняем в каждую запись (JSON строка)
+    group_members_json = json.dumps(group_members, ensure_ascii=False)
+    for rec in db_records:
+        rec["group_members"] = group_members_json
+
     # 5. 🔥 СНАЧАЛА запись в Google Sheets
     saved_rows = []
     try:
@@ -550,12 +568,8 @@ async def api_bookings_submit(payload: BookingSubmitIn):
         db_ids.append(booking_id)
         print(f"✅ ID записи в БД: {booking_id}")
 
-        # Отправляем уведомление админам о новой брони (всегда для /api/bookings/submit)
-        try:
-            from bull_project.bull_bot.handlers.booking_handlers import notify_admins_new_booking
-            await notify_admins_new_booking(booking_id)
-        except Exception as e:
-            print(f"⚠️ Не удалось отправить уведомление о новой брони #{booking_id}: {e}")
+        # Уведомления шлет bot-worker. API не отправляет, чтобы избежать bot=None.
+        print(f"ℹ️ Бронь #{booking_id} создана. Уведомление отправит bot-worker.")
 
     print("\n" + "="*60)
     print("✅ ЗАПРОС УСПЕШНО ОБРАБОТАН")
@@ -589,6 +603,12 @@ async def get_manager_history(manager_id: int):
         bookings_data = []
         for b in bookings:
             passport_path = await resolve_passport_path(b)
+            group_members = []
+            if b.group_members:
+                try:
+                    group_members = json.loads(b.group_members)
+                except Exception:
+                    group_members = []
             bookings_data.append( {
                 "id": b.id,
                 "manager_id": b.manager_id,
@@ -622,6 +642,7 @@ async def get_manager_history(manager_id: int):
                 "guest_iin": b.guest_iin,
                 "client_phone": b.client_phone,
                 "passport_image_path": passport_path,
+                "group_members": group_members,
                 "status": b.status,
                 "created_at": b.created_at.isoformat() if b.created_at else None
             })
@@ -764,7 +785,8 @@ async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
         def _norm(val: str) -> str:
             return (val or "").strip().lower()
 
-        if payload.verify_name and target_row and target_table_id and target_sheet:
+        # Проверка ФИО в строке таблицы: всегда, если есть строка/таблица/лист
+        if target_row and target_table_id and target_sheet:
             try:
                 from bull_project.bull_bot.core.google_sheets.client import get_google_client
                 from bull_project.bull_bot.core.google_sheets.allocator import find_headers_extended, find_package_row
@@ -1301,6 +1323,12 @@ async def admin_requests():
             booking = await get_booking_by_id(req.booking_id)
             if not booking:
                 continue
+            group_members = []
+            if booking.group_members:
+                try:
+                    group_members = json.loads(booking.group_members)
+                except Exception:
+                    group_members = []
             result.append({
                 "id": req.id,
                 "booking_id": booking.id,
@@ -1326,7 +1354,8 @@ async def admin_requests():
                     "departure_city": booking.departure_city,
                     "source": booking.source,
                     "comment": booking.comment,
-                    "manager_name_text": booking.manager_name_text
+                    "manager_name_text": booking.manager_name_text,
+                    "group_members": group_members
                 }
             })
         return {"ok": True, "data": result}

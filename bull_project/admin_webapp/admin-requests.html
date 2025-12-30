@@ -43,7 +43,7 @@
     tg.ready();
     tg.expand();
 
-    async function loadRequests() {
+   async function loadRequests() {
       const container = document.getElementById('list');
       container.innerHTML = "⏳ Загружаю...";
       try {
@@ -69,6 +69,8 @@
         "solo": "🧍 Одиночное"
       };
       const placement = placementMap[b.placement_type] || (b.placement_type || "-");
+      const groupMembers = Array.isArray(b.group_members) ? b.group_members : [];
+      const groupText = groupMembers.length > 1 ? groupMembers.join(', ') : null;
       const created = b.created_at ? new Date(b.created_at).toLocaleString('ru-RU') : '-';
       return `
       <div class="card" data-id="${r.id}">
@@ -91,6 +93,7 @@
         <div class="section">
           <h4>Размещение</h4>
           <div class="badge">${placement}</div>
+          ${groupText ? `<div class="row"><span class="label">Группа</span><span class="value">${groupText}</span></div>` : ''}
           <div class="row"><span class="label">Комната</span><span class="value">${b.room_type || '-'}</span></div>
           <div class="row"><span class="label">Питание</span><span class="value">${b.meal_type || '-'}</span></div>
           <div class="row"><span class="label">Цена</span><span class="value">${b.price || '-'}</span></div>

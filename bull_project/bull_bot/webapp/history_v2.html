@@ -420,7 +420,6 @@
         
         .action-btn {
             flex: 1;
-            min-width: 140px;
             padding: 8px 12px;
             border: 2px solid var(--border-color);
             border-radius: 10px;
@@ -499,30 +498,7 @@
             color: var(--text-secondary);
             font-size: 18px;
         }
-
-        /* Loading overlay for file uploads */
-        body > .loading {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: white;
-        }
-
-        body > .loading p {
-            color: white;
-            margin-top: 20px;
-            font-size: 16px;
-            font-weight: 600;
-        }
-
+        
         .spinner {
             display: inline-block;
             width: 40px;
@@ -532,15 +508,7 @@
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
-
-        body > .loading .spinner {
-            width: 60px;
-            height: 60px;
-            border-width: 6px;
-            border-color: rgba(255, 255, 255, 0.3);
-            border-top-color: white;
-        }
-
+        
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
@@ -616,23 +584,127 @@
     </div>
 </div>
 
+<!-- Модалка редактирования -->
 <div class="modal" id="edit-modal">
     <div class="modal-content">
         <h2 style="font-size: 20px; font-weight: 700; color: var(--accent-dark); margin-bottom: 20px;">✏️ Редактировать данные</h2>
 
-        <div style="margin-bottom: 20px;">
-            <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--accent-brown);">📞 ТЕЛЕФОН</label>
-            <input type="tel" id="edit-phone" class="search-input" style="width: 100%; margin-bottom: 0;" placeholder="+7 777 123 45 67">
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Фамилия</label>
+                <input type="text" id="edit-last-name" class="search-input" style="width:100%;">
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Имя</label>
+                <input type="text" id="edit-first-name" class="search-input" style="width:100%;">
+            </div>
         </div>
 
-        <div style="margin-bottom: 20px;">
-            <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--accent-brown);">💰 СУММА ОПЛАТЫ</label>
-            <input type="text" id="edit-amount-paid" class="search-input" style="width: 100%; margin-bottom: 0;" placeholder="150000">
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Телефон</label>
+                <input type="tel" id="edit-phone" class="search-input" style="width:100%;" placeholder="+7 777 123 45 67">
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Пол</label>
+                <select id="edit-gender" class="search-input" style="width:100%;">
+                    <option value="M">Мужской</option>
+                    <option value="F">Женский</option>
+                </select>
+            </div>
         </div>
 
-        <div style="margin-bottom: 20px;">
-            <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--accent-brown);">💬 КОММЕНТАРИЙ</label>
-            <textarea id="edit-comment" style="width: 100%; padding: 14px 16px; border: 2px solid var(--border-color); border-radius: 14px; background-color: var(--bg-secondary); color: var(--text-primary); font-size: 16px; font-family: inherit; outline: none; min-height: 100px; resize: vertical;" placeholder="Дополнительная информация..."></textarea>
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Паспорт</label>
+                <input type="text" id="edit-passport" class="search-input" style="width:100%;" placeholder="N12345678">
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Срок действия</label>
+                <input type="text" id="edit-passport-exp" class="search-input" style="width:100%;" placeholder="12.12.2028">
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Дата рождения</label>
+                <input type="text" id="edit-dob" class="search-input" style="width:100%;" placeholder="01.01.1990">
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">ИИН</label>
+                <input type="text" id="edit-iin" class="search-input" style="width:100%;" placeholder="ИИН">
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Виза</label>
+                <input type="text" id="edit-visa" class="search-input" style="width:100%;" placeholder="UMRAH VISA">
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Avia</label>
+                <input type="text" id="edit-avia" class="search-input" style="width:100%;" placeholder="-">
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Питание</label>
+                <input type="text" id="edit-meal" class="search-input" style="width:100%;" placeholder="HB">
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Город вылета</label>
+                <input type="text" id="edit-departure" class="search-input" style="width:100%;" placeholder="Almaty">
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Регион</label>
+                <input type="text" id="edit-region" class="search-input" style="width:100%;" placeholder="-">
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Поезд</label>
+                <input type="text" id="edit-train" class="search-input" style="width:100%;" placeholder="-">
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Цена ($)</label>
+                <input type="text" id="edit-price" class="search-input" style="width:100%;" placeholder="1600">
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Оплачено</label>
+                <input type="text" id="edit-amount-paid" class="search-input" style="width:100%;" placeholder="1500">
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Курс</label>
+                <input type="text" id="edit-exchange" class="search-input" style="width:100%;" placeholder="495">
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Скидка</label>
+                <input type="text" id="edit-discount" class="search-input" style="width:100%;" placeholder="-">
+            </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-bottom: 16px;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Менеджер</label>
+                <input type="text" id="edit-manager" class="search-input" style="width:100%;" placeholder="-">
+            </div>
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Источник</label>
+                <input type="text" id="edit-source" class="search-input" style="width:100%;" placeholder="-">
+            </div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+            <label style="display:block; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--accent-brown);">Комментарий</label>
+            <textarea id="edit-comment" style="width: 100%; padding: 12px; border: 2px solid var(--border-color); border-radius: 12px; min-height: 90px; background: var(--bg-secondary);"></textarea>
         </div>
 
         <div class="modal-actions">
@@ -892,6 +964,8 @@
         const comment = booking.comment && booking.comment.trim() !== '' ? booking.comment : '-';
         const managerName = safeValue(booking.manager_name_text || booking.manager_name);
         const passportImage = booking.passport_image_path;
+        const groupMembers = Array.isArray(booking.group_members) ? booking.group_members : [];
+        const groupLabel = groupMembers.length > 1 ? groupMembers.join(', ') : null;
 
         // Additional details
         const passportNum = safeValue(booking.passport_num);
@@ -930,6 +1004,7 @@
                     <div class="booking-detail">Пакет: <strong>${packageName}</strong></div>
                     <div class="booking-detail">Дата: <strong>${sheetName}</strong></div>
                     <div class="booking-detail">Комната: <strong>${roomType}</strong></div>
+                    ${groupLabel ? `<div class="booking-detail">Группа: <strong>${groupLabel}</strong></div>` : ''}
                 </div>
 
                 <button class="details-btn" onclick="toggleDetails(${cardIndex})">
@@ -937,6 +1012,13 @@
                 </button>
 
                 <div class="booking-details-full" id="details-${cardIndex}">
+                    ${groupLabel ? `
+                    <div class="details-section">
+                        <div class="details-section-title">Группа</div>
+                        <div class="booking-detail">Состав: <strong>${groupLabel}</strong></div>
+                    </div>
+                    ` : ''}
+
                     <div class="details-section">
                         <div class="details-section-title">Паспортные данные</div>
                         <div class="booking-detail">Пол: <strong>${gender}</strong></div>
@@ -972,8 +1054,8 @@
 
                 ${!cancelled ? `
                 <div class="booking-actions">
-                    <button class="action-btn" onclick="startEditData(${booking.id})">✏️ Изменить данные</button>
-                    <button class="action-btn primary" onclick="startUploadPassport(${booking.id})">📄 Загрузить паспорт</button>
+                    <button class="action-btn" onclick="startEditData(${booking.id})">✏️ Изменить</button>
+                    <button class="action-btn" onclick="startUploadPassport(${booking.id})">📄 Загрузить паспорт</button>
                     <button class="action-btn" onclick="startReschedule(${booking.id})">Перенести</button>
                     <button class="action-btn danger" onclick="confirmCancel(${booking.id})">Отменить</button>
                 </div>
@@ -1116,41 +1198,112 @@
         const booking = allBookings.find(b => b.id === bookingId);
         if (!booking) return;
 
-        // Формируем данные паломника для передачи в index.html
-        const pilgrim = {
-            last_name: booking.guest_last_name || "-",
-            first_name: booking.guest_first_name || "-",
-            gender: booking.gender || "M",
-            date_of_birth: booking.date_of_birth || "-",
-            passport_num: booking.passport_num || "-",
-            passport_expiry: booking.passport_expiry || "-",
-            iin: booking.guest_iin || "-",
-            phone: booking.client_phone || "-",
-            passport_image_path: booking.passport_image_path || null
+        const pilgrimData = {
+            first_name: booking.guest_first_name,
+            last_name: booking.guest_last_name,
+            phone: booking.client_phone,
+            passport_num: booking.passport_num,
+            date_of_birth: booking.date_of_birth,
+            gender: booking.gender,
+            passport_expiry: booking.passport_expiry,
+            iin: booking.guest_iin
         };
 
-        // Кодируем данные для URL
-        const pilgrimsParam = encodeURIComponent(JSON.stringify([pilgrim]));
+        localStorage.setItem('reschedule_booking_id', booking.id);
+        localStorage.setItem('reschedule_data', JSON.stringify(pilgrimData));
+        localStorage.setItem('is_reschedule', 'true');
 
-        // Формируем относительный URL для index.html (в той же директории)
-        const params = new URLSearchParams();
-        params.set('pilgrims', pilgrimsParam);
-        params.set('mode', 'reschedule');
-        params.set('old_booking_id', booking.id);
-
-        const targetUrl = `index.html?${params.toString()}`;
-
-        console.log('♻️ Открываю перенос брони #', booking.id);
-        console.log('URL:', targetUrl);
-
-        // Переходим на форму переноса
-        window.location.href = targetUrl;
+        // Используем существующую форму бронирования
+        window.location.href = 'index.html';
     }
 
     function rescheduleBooking() {
         if (selectedBooking) {
             startReschedule(selectedBooking.id);
         }
+    }
+
+    async function startUploadPassport(bookingId) {
+        const booking = allBookings.find(b => b.id === bookingId);
+        if (!booking) return;
+
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.jpg,.jpeg,.png,.pdf';
+
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // overlay loading
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'loading';
+            loadingDiv.innerHTML = '<div class="spinner"></div><p>⏳ Загрузка и распознавание паспорта...</p>';
+            document.body.appendChild(loadingDiv);
+
+            try {
+                const formData = new FormData();
+                formData.append("file", file);
+
+                const uploadRes = await fetch(`${API_URL}/api/passports/upload`, {
+                    method: "POST",
+                    body: formData,
+                    headers: {"ngrok-skip-browser-warning": "1"}
+                });
+                const uploadJson = await uploadRes.json();
+                if (!uploadRes.ok || !uploadJson.ok) {
+                    throw new Error(uploadJson.error || `Ошибка загрузки: ${uploadRes.status}`);
+                }
+
+                const parsedData = uploadJson.parsed_data || uploadJson.data || {};
+                const passportPath = uploadJson.path;
+
+                const patchBody = {
+                    verify_name: true,
+                    sheet_row_number: booking.sheet_row_number,
+                    package_name: booking.package_name,
+                    sheet_name: booking.sheet_name,
+                    table_id: booking.table_id,
+                    pilgrims: [{
+                        // имя/фамилию не трогаем
+                        gender: parsedData.gender,
+                        date_of_birth: parsedData.date_of_birth,
+                        passport_num: parsedData.passport_num,
+                        passport_expiry: parsedData.passport_expiry,
+                        iin: parsedData.iin,
+                        passport_image_path: passportPath
+                    }]
+                };
+
+                const updateRes = await fetch(`${API_URL}/api/bookings/${bookingId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        "Content-Type": "application/json",
+                        "ngrok-skip-browser-warning": "1"
+                    },
+                    body: JSON.stringify(patchBody)
+                });
+                const updateJson = await updateRes.json();
+                if (!updateRes.ok || !updateJson.ok) {
+                    throw new Error(updateJson.error || 'Ошибка обновления данных');
+                }
+
+                let msg = '✅ Паспорт загружен и данные обновлены.';
+                if (parsedData.passport_num) msg += `\nПаспорт: ${parsedData.passport_num}`;
+                if (parsedData.passport_expiry) msg += `\nСрок: ${parsedData.passport_expiry}`;
+                if (parsedData.date_of_birth) msg += `\nДР: ${parsedData.date_of_birth}`;
+                alert(msg);
+
+                const user = tg.initDataUnsafe?.user;
+                await loadBookings(urlManagerId || user?.id || 0);
+            } catch (err) {
+                alert('❌ Ошибка загрузки: ' + err.message);
+            } finally {
+                document.body.removeChild(loadingDiv);
+            }
+        };
+
+        input.click();
     }
 
     function showEmpty() {
@@ -1174,167 +1327,102 @@
     }
 
     let editingBookingId = null;
+    let editingBooking = null;
 
     function startEditData(bookingId) {
         const booking = allBookings.find(b => b.id === bookingId);
         if (!booking) return;
 
-        console.log('✏️ Открываю редактирование брони #', booking.id);
-
-        // Сохраняем ID редактируемой брони
         editingBookingId = bookingId;
+        editingBooking = booking;
 
-        // Заполняем форму текущими данными
+        // Заполняем поля
+        document.getElementById('edit-last-name').value = booking.guest_last_name || '';
+        document.getElementById('edit-first-name').value = booking.guest_first_name || '';
         document.getElementById('edit-phone').value = booking.client_phone || '';
+        document.getElementById('edit-gender').value = booking.gender || 'M';
+        document.getElementById('edit-passport').value = booking.passport_num || '';
+        document.getElementById('edit-passport-exp').value = booking.passport_expiry || '';
+        document.getElementById('edit-dob').value = booking.date_of_birth || '';
+        document.getElementById('edit-iin').value = booking.guest_iin || '';
+        document.getElementById('edit-visa').value = booking.visa_status || '';
+        document.getElementById('edit-avia').value = booking.avia || '';
+        document.getElementById('edit-meal').value = booking.meal_type || '';
+        document.getElementById('edit-departure').value = booking.departure_city || '';
+        document.getElementById('edit-region').value = booking.region || '';
+        document.getElementById('edit-train').value = booking.train || '';
+        document.getElementById('edit-price').value = booking.price || '';
         document.getElementById('edit-amount-paid').value = booking.amount_paid || '';
+        document.getElementById('edit-exchange').value = booking.exchange_rate || '';
+        document.getElementById('edit-discount').value = booking.discount || '';
+        document.getElementById('edit-manager').value = booking.manager_name_text || booking.manager_name || '';
+        document.getElementById('edit-source').value = booking.source || '';
         document.getElementById('edit-comment').value = booking.comment || '';
 
-        // Открываем модалку редактирования
         document.getElementById('edit-modal').classList.add('active');
     }
 
     function closeEditModal() {
         document.getElementById('edit-modal').classList.remove('active');
         editingBookingId = null;
+        editingBooking = null;
     }
 
     async function saveEditedData() {
-        if (!editingBookingId) return;
+        if (!editingBookingId || !editingBooking) return;
 
-        const phone = document.getElementById('edit-phone').value.trim();
-        const amountPaid = document.getElementById('edit-amount-paid').value.trim();
-        const comment = document.getElementById('edit-comment').value.trim();
+        const body = {
+            verify_name: true,
+            sheet_row_number: editingBooking.sheet_row_number,
+            package_name: editingBooking.package_name,
+            sheet_name: editingBooking.sheet_name,
+            table_id: editingBooking.table_id,
+            pilgrims: [{
+                last_name: document.getElementById('edit-last-name').value.trim(),
+                first_name: document.getElementById('edit-first-name').value.trim(),
+                phone: document.getElementById('edit-phone').value.trim(),
+                gender: document.getElementById('edit-gender').value,
+                passport_num: document.getElementById('edit-passport').value.trim(),
+                passport_expiry: document.getElementById('edit-passport-exp').value.trim(),
+                date_of_birth: document.getElementById('edit-dob').value.trim(),
+                iin: document.getElementById('edit-iin').value.trim()
+            }],
+            visa_status: document.getElementById('edit-visa').value.trim(),
+            avia: document.getElementById('edit-avia').value.trim(),
+            meal_type: document.getElementById('edit-meal').value.trim(),
+            departure_city: document.getElementById('edit-departure').value.trim(),
+            region: document.getElementById('edit-region').value.trim(),
+            train: document.getElementById('edit-train').value.trim(),
+            price: document.getElementById('edit-price').value.trim(),
+            amount_paid: document.getElementById('edit-amount-paid').value.trim(),
+            exchange_rate: document.getElementById('edit-exchange').value.trim(),
+            discount: document.getElementById('edit-discount').value.trim(),
+            manager_name_text: document.getElementById('edit-manager').value.trim(),
+            source: document.getElementById('edit-source').value.trim(),
+            comment: document.getElementById('edit-comment').value.trim()
+        };
 
         try {
-            const updateRes = await fetch(`${API_URL}/api/bookings/${editingBookingId}`, {
+            const res = await fetch(`${API_URL}/api/bookings/${editingBookingId}`, {
                 method: 'PATCH',
                 headers: {
                     "Content-Type": "application/json",
                     "ngrok-skip-browser-warning": "1"
                 },
-                body: JSON.stringify({
-                    pilgrims: [{
-                        phone: phone || null
-                    }],
-                    amount_paid: amountPaid || null,
-                    comment: comment || null
-                })
+                body: JSON.stringify(body)
             });
-
-            const updateJson = await updateRes.json();
-
-            if (!updateRes.ok || !updateJson.ok) {
-                throw new Error(updateJson.error || 'Ошибка обновления данных');
+            const json = await res.json();
+            if (!res.ok || !json.ok) {
+                alert('❌ Ошибка сохранения: ' + (json.error || res.status));
+                return;
             }
-
-            alert('✅ Данные успешно обновлены!');
-
-            // Закрываем модалку
+            alert('✅ Изменения сохранены');
             closeEditModal();
-
-            // Перезагружаем список бронирований
             const user = tg.initDataUnsafe?.user;
             await loadBookings(urlManagerId || user?.id || 0);
-
-        } catch (err) {
-            alert('❌ Ошибка обновления: ' + err.message);
+        } catch (e) {
+            alert('❌ Ошибка сети: ' + e);
         }
-    }
-
-    async function startUploadPassport(bookingId) {
-        const booking = allBookings.find(b => b.id === bookingId);
-        if (!booking) return;
-
-        // Создаем input для выбора файла
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.jpg,.jpeg,.png,.pdf';
-
-        input.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            try {
-                // Показываем индикатор загрузки
-                const loadingDiv = document.createElement('div');
-                loadingDiv.className = 'loading';
-                loadingDiv.innerHTML = '<div class="spinner"></div><p>⏳ Загрузка и распознавание паспорта...</p>';
-                document.body.appendChild(loadingDiv);
-
-                // Загружаем файл на сервер
-                const formData = new FormData();
-                formData.append("file", file);
-
-                const uploadRes = await fetch(`${API_URL}/api/passports/upload`, {
-                    method: "POST",
-                    body: formData,
-                    headers: {"ngrok-skip-browser-warning": "1"}
-                });
-
-                const uploadJson = await uploadRes.json();
-
-                if (!uploadRes.ok || !uploadJson.ok) {
-                    throw new Error(uploadJson.error || `Ошибка загрузки: ${uploadRes.status}`);
-                }
-
-                const passportPath = uploadJson.path;
-                const parsedData = uploadJson.parsed_data || {};
-                console.log('✅ Паспорт загружен:', passportPath);
-                console.log('📄 Распознанные данные:', parsedData);
-
-                // Обновляем паспортные данные в БД (БЕЗ имени и фамилии!)
-                const updateRes = await fetch(`${API_URL}/api/bookings/${bookingId}`, {
-                    method: 'PATCH',
-                    headers: {
-                        "Content-Type": "application/json",
-                        "ngrok-skip-browser-warning": "1"
-                    },
-                    body: JSON.stringify({
-                        pilgrims: [{
-                            // НЕ отправляем имя и фамилию - оставляем как есть в БД
-                            gender: parsedData.gender,
-                            date_of_birth: parsedData.date_of_birth,
-                            passport_num: parsedData.passport_num,
-                            passport_expiry: parsedData.passport_expiry,
-                            iin: parsedData.iin,
-                            passport_image_path: passportPath
-                        }]
-                    })
-                });
-
-                const updateJson = await updateRes.json();
-
-                if (!updateRes.ok || !updateJson.ok) {
-                    throw new Error(updateJson.error || 'Ошибка обновления данных');
-                }
-
-                // Убираем индикатор загрузки
-                document.body.removeChild(loadingDiv);
-
-                // Формируем сообщение о распознанных данных
-                let successMsg = '✅ Паспорт успешно загружен и распознан!\n\n';
-                if (parsedData.gender) successMsg += `👤 Пол: ${parsedData.gender}\n`;
-                if (parsedData.date_of_birth) successMsg += `📅 Дата рождения: ${parsedData.date_of_birth}\n`;
-                if (parsedData.passport_num) successMsg += `🆔 Номер паспорта: ${parsedData.passport_num}\n`;
-                if (parsedData.passport_expiry) successMsg += `⏰ Срок действия: ${parsedData.passport_expiry}\n`;
-                if (parsedData.iin) successMsg += `🔢 ИИН: ${parsedData.iin}\n`;
-
-                alert(successMsg);
-
-                // Перезагружаем список бронирований
-                const user = tg.initDataUnsafe?.user;
-                await loadBookings(urlManagerId || user?.id || 0);
-
-            } catch (err) {
-                alert('❌ Ошибка загрузки паспорта: ' + err.message);
-                // Убираем индикатор загрузки если он есть
-                const loadingDiv = document.querySelector('.loading');
-                if (loadingDiv) document.body.removeChild(loadingDiv);
-            }
-        };
-
-        // Открываем диалог выбора файла
-        input.click();
     }
 
     document.getElementById('detail-modal').addEventListener('click', function(e) {
@@ -1342,7 +1430,6 @@
             closeModal();
         }
     });
-
     document.getElementById('edit-modal').addEventListener('click', function(e) {
         if (e.target === this) {
             closeEditModal();

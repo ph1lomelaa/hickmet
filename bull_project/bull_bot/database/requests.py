@@ -1,7 +1,20 @@
-from sqlalchemy import select, desc, func, distinct, or_
+from sqlalchemy import select, desc, func, distinct, or_, text
 from datetime import datetime, timedelta
 from .models import User, Booking, Request4U, AdminSettings, ApprovalRequest
-from .setup import async_session
+from .setup import async_session, engine
+
+
+async def ensure_group_members_column():
+    """
+    Мягко добавляем колонку group_members, если ее еще нет (SQLite/Postgres).
+    Ошибки игнорируем, чтобы не падать при повторном вызове.
+    """
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("ALTER TABLE bookings ADD COLUMN group_members TEXT"))
+    except Exception:
+        # Уже есть или нет прав — тихо игнорируем
+        pass
 
 # === ПОЛЬЗОВАТЕЛИ ===
 
@@ -85,6 +98,7 @@ async def update_approval_status(request_id: int, status: str):
             await session.commit()
 
 async def get_pending_requests():
+    await ensure_group_members_column()
     async with async_session() as session:
         query = select(ApprovalRequest).where(ApprovalRequest.status == "pending").order_by(desc(ApprovalRequest.created_at))
         result = await session.scalars(query)
@@ -105,6 +119,7 @@ async def delete_user(tg_id: int):
 
 async def add_booking_to_db(data: dict, manager_id: int):
     """Принимает словарь полей и создает запись Booking"""
+    await ensure_group_members_column()
     async with async_session() as session:
         # manager_id берется отдельно, остальные поля из словаря
         booking = Booking(manager_id=manager_id, **data)
@@ -368,6 +383,7 @@ async def get_all_bookings_by_period(start_date, end_date):
 
 async def get_last_n_bookings_by_manager(manager_id: int, limit=10, include_cancelled: bool = False):
     """Последние N броней менеджера (по умолчанию без отменённых)."""
+    await ensure_group_members_column()
     async with async_session() as session:
         query = select(Booking).where(Booking.manager_id == manager_id)
         if not include_cancelled:

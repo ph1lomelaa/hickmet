@@ -64,6 +64,7 @@ class Booking(Base):
     passport_expiry = Column(String)
     guest_iin = Column(String)
     contract_number = Column(String, nullable=True)
+    group_members = Column(Text, nullable=True)
 
     # --- ОСТАЛЬНОЕ ---
     price = Column(String)

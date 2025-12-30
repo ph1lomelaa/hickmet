@@ -1,81 +1,78 @@
-"""
-Утилита: выводит первые 200 строк первого листа Google Sheets
-с базовым форматированием (цвет фона, формат числа, отображаемое значение).
-
-Запуск:
-  python inspect_sheet.py --sheet-id <ID> [--credentials path/to/service_account.json]
-
-Требования:
-  pip install google-api-python-client google-auth
-  (gspread в проекте уже тянет google-auth, но клиент может отсутствовать)
-"""
-
-import argparse
-import sys
-from typing import Optional
-
+#!/usr/bin/env python3
+"""Прямой парсинг мартовского листа"""
+import json
+import gspread
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
 
+SPREADSHEET_ID = "1uQACMT3jkNHOtzWILUa6HFNnP8V_ll96Terxf5XEzMU"
 
-def color_to_hex(color: Optional[dict]) -> str:
-    """Конвертирует цвет Google API в HEX."""
-    if not color:
-        return "#FFFFFF"
-    r = int(color.get("red", 1) * 255)
-    g = int(color.get("green", 1) * 255)
-    b = int(color.get("blue", 1) * 255)
-    return f"#{r:02X}{g:02X}{b:02X}"
-
+def get_client():
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    creds = Credentials.from_service_account_file('credentials.json', scopes=scope)
+    return gspread.authorize(creds)
 
 def main():
-    parser = argparse.ArgumentParser(description="Показать первые 200 строк первого листа")
-    parser.add_argument("--sheet-id", required=True, help="ID таблицы (длинная строка из URL)")
-    parser.add_argument(
-        "--credentials",
-        default="bull_bot/credentials/service_account.json",
-        help="Путь к service_account.json (по умолчанию bull_bot/credentials/service_account.json)",
-    )
-    args = parser.parse_args()
-
-    scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    try:
-        creds = Credentials.from_service_account_file(args.credentials, scopes=scopes)
-    except Exception as e:
-        sys.stderr.write(f"❌ Не удалось загрузить креды: {e}\n")
-        sys.exit(1)
-
-    service = build("sheets", "v4", credentials=creds)
-
-    # Узнаем имя первого листа
-    meta = service.spreadsheets().get(
-        spreadsheetId=args.sheet_id,
-        fields="sheets(properties(title))",
-    ).execute()
-    first_title = meta["sheets"][0]["properties"]["title"]
-
-    # Берем первые 200 строк (A:Z можно расширить при необходимости)
-    rng = f"{first_title}!A1:Z200"
-    resp = service.spreadsheets().get(
-        spreadsheetId=args.sheet_id,
-        ranges=[rng],
-        includeGridData=True,
-        fields="sheets(data(rowData(values(formattedValue,effectiveFormat(backgroundColor,textFormat,numberFormat)))))",
-    ).execute()
-
-    data = resp["sheets"][0]["data"][0].get("rowData", [])
-    for i, row in enumerate(data, start=1):
-        cells = row.get("values", [])
-        pretty_cells = []
-        for cell in cells:
-            val = cell.get("formattedValue", "")
-            fmt = cell.get("effectiveFormat", {}) or {}
-            bg = color_to_hex(fmt.get("backgroundColor"))
-            num_fmt = fmt.get("numberFormat", {})
-            fmt_str = num_fmt.get("pattern") or num_fmt.get("type") or ""
-            pretty_cells.append(f"[{val} | {bg} | {fmt_str}]")
-        print(f"{i:03d}: " + " ".join(pretty_cells))
-
+    print("="*100)
+    print("ПОЛНЫЙ ПАРСИНГ МАРТОВСКОГО ЛИСТА")
+    print("="*100)
+    
+    gc = get_client()
+    print(f"\n📂 Открываем таблицу {SPREADSHEET_ID}...")
+    spreadsheet = gc.open_by_key(SPREADSHEET_ID)
+    print(f"✅ Таблица: {spreadsheet.title}")
+    
+    worksheets = spreadsheet.worksheets()
+    print(f"\n📋 Листов: {len(worksheets)}")
+    for ws in worksheets:
+        print(f"   - {ws.title}")
+    
+    target = None
+    for ws in worksheets:
+        if ws.title.startswith("07.03"):
+            target = ws
+            break
+    
+    if not target:
+        print("\n❌ Лист 07.03 не найден!")
+        return
+    
+    print(f"\n✅ Лист: '{target.title}'")
+    print(f"\n{'='*100}")
+    print("ПЕРВЫЕ 100 СТРОК (A-D):")
+    print(f"{'='*100}\n")
+    
+    data = target.get('A1:D100')
+    
+    for idx, row in enumerate(data, 1):
+        if not row or all(not c.strip() for c in row if c):
+            continue
+        cells = [f"{chr(65+i)}: {c if c else '-'}" for i, c in enumerate(row)]
+        print(f"Строка {idx:3d}: {' | '.join(cells)}")
+    
+    print(f"\n{'='*100}")
+    print("ПОИСК ПАКЕТОВ:")
+    print(f"{'='*100}\n")
+    
+    keywords = ["niyet", "hikma", "izi", "4u", "premium", "econom", "стандарт", "эконом", "comfort", "ramadan", "рамадан", "ramazan", "ramad", "itikaf", "итикаф", "umrah", "умра"]
+    found = []
+    
+    for idx, row in enumerate(data, 1):
+        if not row:
+            continue
+        txt = " ".join(row).lower()
+        for kw in keywords:
+            if kw in txt:
+                found.append((idx, row, kw))
+                break
+    
+    if found:
+        print(f"✅ Найдено {len(found)} пакетов:\n")
+        for idx, row, kw in found:
+            cells = [f"{chr(65+i)}: {c if c else '-'}" for i, c in enumerate(row)]
+            print(f"  Строка {idx:3d} ('{kw}'): {' | '.join(cells)}")
+    else:
+        print("❌ ПАКЕТЫ НЕ НАЙДЕНЫ!")
+        print(f"\nКлючи: {', '.join(keywords)}")
 
 if __name__ == "__main__":
     main()
