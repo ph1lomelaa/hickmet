@@ -23,7 +23,8 @@ from bull_project.bull_bot.config.keyboards import (
 from bull_project.bull_bot.core.parsers.passport_parser import PassportParser, PassportParserEasyOCR
 from bull_project.bull_bot.database.requests import (
     add_user, get_user_role, add_booking_to_db, add_4u_request, get_admin_ids,
-    update_booking_row, delete_user, get_user_by_id, get_booking_by_id, mark_booking_cancelled
+    update_booking_row, delete_user, get_user_by_id, get_booking_by_id, mark_booking_cancelled,
+    get_admin_settings
 )
 from bull_project.bull_bot.core.google_sheets.writer import save_group_booking, clear_booking_in_sheets
 
@@ -816,6 +817,14 @@ async def finalize_booking_integrated(message: Message, state: FSMContext, pilgr
         is_reschedule = data.get('is_reschedule', False)
         old_booking_id = data.get('old_booking_id')
 
+        # Отправляем уведомления админам о новых бронях (только если это не перенос)
+        if not is_reschedule:
+            for booking_id in db_ids:
+                try:
+                    await notify_admins_new_booking(booking_id)
+                except Exception as e:
+                    print(f"⚠️ Не удалось отправить уведомление о новой брони #{booking_id}: {e}")
+
         if is_reschedule and old_booking_id:
             print(f"\n♻️ ПЕРЕНОС: Отмена старой брони #{old_booking_id}")
             try:
@@ -1005,6 +1014,43 @@ async def booking_sel_pkg(call: CallbackQuery, state: FSMContext):
         await state.set_state(BookingFlow.waiting_count)
 
     await call.answer()
+
+
+# === УВЕДОМЛЕНИЯ АДМИНАМ О НОВЫХ БРОНЯХ ===
+async def notify_admins_new_booking(booking_id: int):
+    """Отправляет уведомление админам о новой брони"""
+    try:
+        booking = await get_booking_by_id(booking_id)
+        if not booking:
+            return
+
+        admin_ids = await get_admin_ids()
+        if not admin_ids:
+            return
+
+        for admin_id in admin_ids:
+            settings = await get_admin_settings(admin_id)
+            if not settings or not settings.notify_new:
+                continue
+
+            text = (
+                f"✨ <b>Новая бронь создана</b>\n"
+                f"#{booking.id} • {booking.package_name or '-'}\n"
+                f"Лист: {booking.sheet_name or '-'} • Строка: {booking.sheet_row_number or '-'}\n"
+                f"Паломник: {booking.guest_last_name or '-'} {booking.guest_first_name or '-'}\n"
+                f"Тел: {booking.client_phone or '-'}\n"
+                f"Размещение: {booking.placement_type or '-'} | Комната: {booking.room_type or '-'} | Питание: {booking.meal_type or '-'}\n"
+                f"Цена: {booking.price or '-'} | Оплачено: {booking.amount_paid or '-'}\n"
+                f"Менеджер: {booking.manager_name_text or '-'}"
+            )
+
+            try:
+                await bot.send_message(admin_id, text, parse_mode="HTML")
+            except Exception as e:
+                print(f"⚠️ Не удалось отправить уведомление админу {admin_id} о новой брони: {e}")
+    except Exception as e:
+        print(f"❌ Ошибка в notify_admins_new_booking: {e}")
+
 
 # Добавьте в booking_handlers.py
 @router.message(Command("test_form"))

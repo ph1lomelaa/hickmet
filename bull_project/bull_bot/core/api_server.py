@@ -547,6 +547,14 @@ async def api_bookings_submit(payload: BookingSubmitIn):
         db_ids.append(booking_id)
         print(f"✅ ID записи в БД: {booking_id}")
 
+        # Отправляем уведомление админам о новой брони (только если это не редактирование)
+        if payload.mode != "edit":
+            try:
+                from bull_project.bull_bot.handlers.booking_handlers import notify_admins_new_booking
+                await notify_admins_new_booking(booking_id)
+            except Exception as e:
+                print(f"⚠️ Не удалось отправить уведомление о новой брони #{booking_id}: {e}")
+
     print("\n" + "="*60)
     print("✅ ЗАПРОС УСПЕШНО ОБРАБОТАН")
     print(f"   Записано паломников: {len(payload.pilgrims)}")  # 🔥 ИСПРАВЛЕНО
