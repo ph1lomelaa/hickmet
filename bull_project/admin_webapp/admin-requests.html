@@ -61,7 +61,7 @@
       }
     }
 
-    function renderCard(r) {
+   function renderCard(r) {
       const b = r.booking;
       const placementMap = {
         "family": "👪 Семья (вместе)",
@@ -69,6 +69,7 @@
         "solo": "🧍 Одиночное"
       };
       const placement = placementMap[b.placement_type] || (b.placement_type || "-");
+      const created = b.created_at ? new Date(b.created_at).toLocaleString('ru-RU') : '-';
       return `
       <div class="card" data-id="${r.id}">
         <div class="header">
@@ -84,6 +85,7 @@
           <h4>Паломник</h4>
           <div class="row"><span class="label">ФИО</span><span class="value">${b.guest_last_name || '-'} ${b.guest_first_name || '-'}</span></div>
           <div class="row"><span class="label">Телефон</span><span class="value">${b.client_phone || '-'}</span></div>
+          <div class="row"><span class="label">Паспорт</span><span class="value">${b.passport_num || '-'} (до ${b.passport_expiry || '-'})</span></div>
         </div>
 
         <div class="section">
@@ -93,13 +95,18 @@
           <div class="row"><span class="label">Питание</span><span class="value">${b.meal_type || '-'}</span></div>
           <div class="row"><span class="label">Цена</span><span class="value">${b.price || '-'}</span></div>
           <div class="row"><span class="label">Оплачено</span><span class="value">${b.amount_paid || '-'}</span></div>
+          <div class="row"><span class="label">Регион</span><span class="value">${b.region || '-'}</span></div>
+          <div class="row"><span class="label">Вылет</span><span class="value">${b.departure_city || '-'}</span></div>
+          ${b.visa_status && b.visa_status !== '-' ? `<div class="row"><span class="label">Виза</span><span class="value">${b.visa_status}</span></div>` : ''}
+          ${b.avia && b.avia !== '-' ? `<div class="row"><span class="label">Avia</span><span class="value">${b.avia}</span></div>` : ''}
+          ${b.train && b.train !== '-' ? `<div class="row"><span class="label">Поезд</span><span class="value">${b.train}</span></div>` : ''}
         </div>
 
         <div class="section">
           <h4>Детали</h4>
           <div class="row"><span class="label">Источник</span><span class="value">${b.source || '-'}</span></div>
-          <div class="row"><span class="label">Регион</span><span class="value">${b.region || '-'}</span></div>
           <div class="row"><span class="label">Менеджер</span><span class="value">${b.manager_name_text || '-'}</span></div>
+          <div class="row"><span class="label">Создано</span><span class="value">${created}</span></div>
         </div>
 
         <div class="section">

@@ -776,18 +776,20 @@ async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
                     ws = get_worksheet_by_title(ss, target_sheet)
                     all_values = ws.get_all_values()
 
-                    pkg_row = find_package_row(all_values, target_pkg)
+                    # Находим блок пакета, но если не нашли — продолжаем искать заголовки по всему листу
+                    pkg_row = find_package_row(all_values, target_pkg) if target_pkg else None
                     cols = None
-                    if pkg_row is not None:
-                        for r in range(pkg_row, min(pkg_row + 30, len(all_values))):
-                            cols = find_headers_extended(all_values[r])
-                            if cols:
-                                break
+                    search_start = pkg_row if pkg_row is not None else 0
+                    for r in range(search_start, min(search_start + 50, len(all_values))):
+                        cols = find_headers_extended(all_values[r])
+                        if cols:
+                            break
 
-                    if cols and 'last_name' in cols and 'first_name' in cols:
+                    if cols and 'last_name' in cols and 'first_name' in cols and target_row - 1 < len(all_values):
                         row_idx0 = target_row - 1
-                        sheet_last = all_values[row_idx0][cols['last_name']] if row_idx0 < len(all_values) and cols['last_name'] < len(all_values[row_idx0]) else ""
-                        sheet_first = all_values[row_idx0][cols['first_name']] if row_idx0 < len(all_values) and cols['first_name'] < len(all_values[row_idx0]) else ""
+                        row_vals = all_values[row_idx0]
+                        sheet_last = row_vals[cols['last_name']] if cols['last_name'] < len(row_vals) else ""
+                        sheet_first = row_vals[cols['first_name']] if cols['first_name'] < len(row_vals) else ""
 
                         expected_last = p.last_name if (p and p.last_name) else booking.guest_last_name
                         expected_first = p.first_name if (p and p.first_name) else booking.guest_first_name

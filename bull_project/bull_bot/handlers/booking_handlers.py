@@ -1017,6 +1017,40 @@ async def booking_sel_pkg(call: CallbackQuery, state: FSMContext):
 
 
 # === УВЕДОМЛЕНИЯ АДМИНАМ О НОВЫХ БРОНЯХ ===
+def _format_admin_booking(booking, title: str, extra: str = "") -> str:
+    """Единый формат уведомлений для админов."""
+    placement_map = {
+        "family": "👪 Семья (вместе)",
+        "separate": "🚻 Раздельно (по полу)",
+        "solo": "🧍 Одиночное"
+    }
+    placement = placement_map.get((booking.placement_type or "").lower(), booking.placement_type or "-")
+    created = booking.created_at.strftime("%d.%m.%Y %H:%M") if booking.created_at else "-"
+
+    parts = [
+        f"{title}",
+        f"#{booking.id} • {booking.package_name or '-'}",
+        f"Лист: {booking.sheet_name or '-'} • Строка: {booking.sheet_row_number or '-'}",
+        f"Размещение: {placement}",
+        f"Комната: {booking.room_type or '-'} | Питание: {booking.meal_type or '-'}",
+        f"Телефон: {booking.client_phone or '-'}",
+        f"Паспорт: {booking.passport_num or '-'} (до {booking.passport_expiry or '-'})",
+        f"Цена: {booking.price or '-'} | Оплачено: {booking.amount_paid or '-'}",
+        f"Регион: {booking.region or '-'} | Вылет: {booking.departure_city or '-'}",
+    ]
+    if booking.visa_status and booking.visa_status != "-":
+        parts.append(f"Виза: {booking.visa_status}")
+    if booking.avia and booking.avia != "-":
+        parts.append(f"Avia: {booking.avia}")
+    if booking.train and booking.train != "-":
+        parts.append(f"Поезд: {booking.train}")
+    parts.append(f"Комментарий: {booking.comment or '-'}")
+    parts.append(f"Менеджер: {booking.manager_name_text or '-'}")
+    parts.append(f"Создано: {created}")
+    if extra:
+        parts.append(extra)
+    return "\n".join(parts)
+
 async def notify_admins_new_booking(booking_id: int):
     """Отправляет уведомление админам о новой брони"""
     try:
@@ -1033,16 +1067,7 @@ async def notify_admins_new_booking(booking_id: int):
             if not settings or not settings.notify_new:
                 continue
 
-            text = (
-                f"✨ <b>Новая бронь создана</b>\n"
-                f"#{booking.id} • {booking.package_name or '-'}\n"
-                f"Лист: {booking.sheet_name or '-'} • Строка: {booking.sheet_row_number or '-'}\n"
-                f"Паломник: {booking.guest_last_name or '-'} {booking.guest_first_name or '-'}\n"
-                f"Тел: {booking.client_phone or '-'}\n"
-                f"Размещение: {booking.placement_type or '-'} | Комната: {booking.room_type or '-'} | Питание: {booking.meal_type or '-'}\n"
-                f"Цена: {booking.price or '-'} | Оплачено: {booking.amount_paid or '-'}\n"
-                f"Менеджер: {booking.manager_name_text or '-'}"
-            )
+            text = _format_admin_booking(booking, "✨ Новая бронь")
 
             try:
                 await bot.send_message(admin_id, text, parse_mode="HTML")

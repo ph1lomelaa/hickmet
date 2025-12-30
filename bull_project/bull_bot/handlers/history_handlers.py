@@ -22,6 +22,7 @@ from bull_project.bull_bot.core.google_sheets.writer import (
 )
 from bull_project.bull_bot.config.keyboards import get_menu_by_role, kb_select_table
 from bull_project.bull_bot.handlers.booking_handlers import BookingFlow
+from bull_project.bull_bot.handlers.booking_handlers import _format_admin_booking
 from bull_project.bull_bot.handlers.booking_handlers import send_webapp_link
 from bull_project.bull_bot.config.constants import bot
 
@@ -324,15 +325,10 @@ async def notify_admins_cancel(booking, req_id: int, initiator_id: int):
         settings = await get_admin_settings(admin_id)
         if not settings or not settings.notify_cancel:
             continue
-        text = (
-            f"🛑 <b>Запрос на отмену брони</b>\n"
-            f"#{booking.id} • {booking.package_name}\n"
-            f"Лист: {booking.sheet_name} • Строка: {booking.sheet_row_number or '-'}\n"
-            f"Паломник: {booking.guest_last_name} {booking.guest_first_name}\n"
-            f"Тел: {booking.client_phone or '-'}\n"
-            f"Размещение: {booking.placement_type or '-'} | Комната: {booking.room_type or '-'} | Питание: {booking.meal_type or '-'}\n"
-            f"Цена: {booking.price or '-'} | Оплачено: {booking.amount_paid or '-'}\n"
-            f"Инициатор: {initiator_id}"
+        text = _format_admin_booking(
+            booking,
+            "🛑 Запрос на отмену",
+            extra=f"Инициатор: {initiator_id}"
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [

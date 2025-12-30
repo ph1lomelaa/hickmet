@@ -20,7 +20,7 @@ from bull_project.bull_bot.core.google_sheets.writer import (
     save_group_booking, check_train_exists, clear_booking_in_sheets, write_rescheduled_booking_red
 )
 # Импортируем BookingFlow из booking_handlers, чтобы состояния не конфликтовали
-from bull_project.bull_bot.handlers.booking_handlers import BookingFlow
+from bull_project.bull_bot.handlers.booking_handlers import BookingFlow, _format_admin_booking
 from bull_project.bull_bot.config.constants import bot
 
 router = Router()
@@ -126,16 +126,10 @@ async def notify_admins_reschedule(new_booking_id: int, old_id: int, req_id: int
         settings = await get_admin_settings(admin_id)
         if not settings or not settings.notify_reschedule:
             continue
-        text = (
-            f"♻️ <b>Запрос на перенос</b>\n"
-            f"Старый #{old_id} → Новый #{booking.id}\n"
-            f"Пакет: {booking.package_name}\n"
-            f"Лист: {booking.sheet_name} • Таблица: {booking.table_id}\n"
-            f"Паломник: {booking.guest_last_name} {booking.guest_first_name}\n"
-            f"Тел: {booking.client_phone or '-'}\n"
-            f"Размещение: {booking.placement_type or '-'} | Комната: {booking.room_type or '-'} | Питание: {booking.meal_type or '-'}\n"
-            f"Цена: {booking.price or '-'} | Оплачено: {booking.amount_paid or '-'}\n"
-            f"Инициатор: {initiator_id}"
+        text = _format_admin_booking(
+            booking,
+            "♻️ Запрос на перенос",
+            extra=f"Старый #{old_id} → Новый #{booking.id}\nИнициатор: {initiator_id}"
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [
