@@ -41,7 +41,9 @@ from bull_project.bull_bot.database.requests import (
     get_all_bookings_for_period,
     search_tourist_by_name,
     get_db_packages_list,
-    get_all_bookings_in_package
+    get_all_bookings_in_package,
+    booking_exists,
+    delete_bookings_by_ids
 )
 from bull_project.bull_bot.database.requests import (
     get_latest_passport_for_person,
@@ -450,9 +452,19 @@ async def api_bookings_submit(payload: BookingSubmitIn):
             )
     print(f"✅ Все паломники имеют корректный пол")
 
+    # 4.1 Проверка на дубликаты по ФИО в этом листе (активные брони)
+    for pilgrim in payload.pilgrims:
+        ln = (pilgrim.last_name or "").strip()
+        fn = (pilgrim.first_name or "").strip()
+        if await booking_exists(payload.table_id, sheet_name, ln, fn):
+            return JSONResponse(
+                status_code=409,
+                content={"ok": False, "error": f"Бронь для {ln} {fn} уже существует"}
+            )
+
     # 5. Формирование данных для Google Sheets
     group_data_for_sheets: List[Dict[str, Any]] = []
-    db_records: List[Dict[str, Any]] = []  # 🔥 Храним данные для БД, но не записываем сразу
+    db_records: List[Dict[str, Any]] = []  # 🔥 Храним данные для БД
     group_members: List[str] = []
 
     for pilgrim in payload.pilgrims:
@@ -524,7 +536,25 @@ async def api_bookings_submit(payload: BookingSubmitIn):
     for rec in db_records:
         rec["group_members"] = group_members
 
-    # 5. 🔥 СНАЧАЛА запись в Google Sheets
+    # 5. 🔥 СНАЧАЛА пишем в БД (без номеров строк)
+    db_ids: List[int] = []
+    try:
+        for record_db in db_records:
+            booking_id = await add_booking_to_db(record_db, manager_id)
+            db_ids.append(booking_id)
+            print(f"✅ ID записи в БД: {booking_id}")
+    except Exception as e:
+        print(f"❌ Ошибка записи в БД: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": f"Ошибка записи в БД: {e}",
+                "saved_rows": [],
+            },
+        )
+
+    # 6. 🔥 Затем пробуем записать в Google Sheets
     saved_rows = []
     try:
         print(f"\n📊 Запись в Google Sheets...")
@@ -542,7 +572,8 @@ async def api_bookings_submit(payload: BookingSubmitIn):
         print(f"❌ Ошибка записи в Sheets: {e}")
         import traceback
         traceback.print_exc()
-
+        # Откат БД, если Sheets упали
+        await delete_bookings_by_ids(db_ids)
         return JSONResponse(
             status_code=500,
             content={
@@ -552,9 +583,10 @@ async def api_bookings_submit(payload: BookingSubmitIn):
             },
         )
 
-    # 🔥 ПРОВЕРКА: Если в Sheets не записалось - НЕ записываем в БД
+    # 🔥 Если в Sheets не записалось - откатываем БД
     if not saved_rows:
-        print(f"⚠️ Место не найдено в Google Sheets - бронь НЕ будет сохранена в БД")
+        print(f"⚠️ Место не найдено в Google Sheets - откатываем БД")
+        await delete_bookings_by_ids(db_ids)
         return JSONResponse(
             status_code=409,
             content={
@@ -564,31 +596,11 @@ async def api_bookings_submit(payload: BookingSubmitIn):
             },
         )
 
-    # 6. 🔥 ТОЛЬКО ЕСЛИ записалось в Sheets - записываем в БД
-    db_ids: List[int] = []
-    for i, record_db in enumerate(db_records):
-        # Проставляем номер строки из Google Sheets
+    # 7. Проставляем номера строк в БД
+    for i, booking_id in enumerate(db_ids):
         if i < len(saved_rows):
-            record_db["sheet_row_number"] = saved_rows[i]
-
-        print(f"\n💾 Сохранение в БД для {record_db['guest_last_name']}:")
-        print(f"   sheet_row_number: {record_db['sheet_row_number']}")
-        print(f"   passport_num: {record_db['passport_num']}")
-        print(f"   group_members present: {'group_members' in record_db}")
-
-        try:
-            booking_id = await add_booking_to_db(record_db, manager_id)
-            db_ids.append(booking_id)
-            print(f"✅ ID записи в БД: {booking_id}")
-        except Exception as e:
-            print(f"❌ КРИТИЧЕСКАЯ ОШИБКА при сохранении в БД:")
-            print(f"   Паломник: {record_db['guest_last_name']} {record_db['guest_first_name']}")
-            print(f"   Ошибка: {type(e).__name__}: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            # НЕ прерываем цикл - пытаемся сохранить остальных
-            continue
-
+            await update_booking_row(booking_id, saved_rows[i])
+        print(f"\n💾 Запись в БД ID {booking_id} привязана к строке {saved_rows[i] if i < len(saved_rows) else 'N/A'}")
         # Уведомления шлет bot-worker. API не отправляет, чтобы избежать bot=None.
         print(f"ℹ️ Бронь #{booking_id} создана. Уведомление отправит bot-worker.")
 
