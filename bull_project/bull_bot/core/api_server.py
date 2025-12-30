@@ -1307,6 +1307,12 @@ async def get_all_bookings(
         bookings_data = []
         for b in bookings:
             passport_path = await resolve_passport_path(b)
+            group_members = []
+            if b.group_members:
+                try:
+                    group_members = json.loads(b.group_members)
+                except Exception:
+                    group_members = []
             bookings_data.append({
                 "id": b.id,
                 "table_id": b.table_id,
@@ -1336,7 +1342,8 @@ async def get_all_bookings(
                 "status": b.status,
                 "manager_name": b.manager_name_text or b.manager_name,
                 "created_at": b.created_at.isoformat() if b.created_at else None,
-                "comment": b.comment or ""
+                "comment": b.comment or "",
+                "group_members": group_members
             })
 
         return {
