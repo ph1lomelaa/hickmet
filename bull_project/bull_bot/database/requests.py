@@ -679,6 +679,7 @@ async def search_packages_by_date(date_str: str):
 
 async def get_all_bookings_for_period(start_date, end_date):
     """Получение всех броней за период (для админа)"""
+    await ensure_group_members_column()
     async with async_session() as session:
         bookings = await session.scalars(
             select(Booking).where(
