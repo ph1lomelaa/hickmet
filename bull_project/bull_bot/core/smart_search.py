@@ -76,12 +76,30 @@ async def get_packages_by_date(date_part: str, force: bool = False) -> dict:
                 sheet_names = await _get_sheet_names_cached(t_id, force=False)
 
                 # выбираем только листы нужной даты
-                # у тебя листы вида "15.01 ..." (это уже в текущем коде проверяется) :contentReference[oaicite:2]{index=2}
+                # Поддерживаем варианты: "07.03", "7.03", "07.3"
                 matched = []
+
+                # Создаем варианты даты для поиска
+                parts = date_part.split(".")
+                if len(parts) == 2:
+                    dd, mm = parts
+                    # Варианты: "07.03", "7.03", "07.3", "7.3"
+                    date_variants = [
+                        f"{dd}.{mm}",           # 07.03
+                        f"{int(dd)}.{mm}",      # 7.03
+                        f"{dd}.{int(mm)}",      # 07.3
+                        f"{int(dd)}.{int(mm)}"  # 7.3
+                    ]
+                else:
+                    date_variants = [date_part]
+
                 for sheet_name in sheet_names:
                     clean = (sheet_name or "").strip()
-                    if len(clean) >= 5 and clean[:5] == date_part:
-                        matched.append(sheet_name)
+                    # Проверяем все варианты даты
+                    for variant in date_variants:
+                        if clean.startswith(variant):
+                            matched.append(sheet_name)
+                            break  # Нашли совпадение, переходим к следующему листу
 
                 # если в этой таблице на дату нет листов — идём дальше
                 if not matched:
