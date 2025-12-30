@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Админ — заявки</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="config.js"></script>
   <style>
     :root {
       --bg: #FAF8F5; --card: #FFFFFF; --border: #E8E3DC;
@@ -35,13 +37,19 @@
   <div id="list"></div>
 
   <script>
-    const API_URL = window.location.origin.replace(/\/admin_webapp.*/, "") || "";
+    const API_URL = window.BULL_API_URL;
+    const tg = window.Telegram.WebApp;
+
+    tg.ready();
+    tg.expand();
 
     async function loadRequests() {
       const container = document.getElementById('list');
       container.innerHTML = "⏳ Загружаю...";
       try {
-        const res = await fetch(`${API_URL}/api/admin/requests`);
+        const res = await fetch(`${API_URL}/api/admin/requests`, {
+          headers: {"ngrok-skip-browser-warning": "1"}
+        });
         const json = await res.json();
         if (!json.ok || !json.data || !json.data.length) {
           container.innerHTML = '<div class="empty">Нет заявок</div>';
@@ -109,7 +117,10 @@
     async function approve(id) {
       const card = document.querySelector(`[data-id="${id}"]`);
       if (card) card.style.opacity = 0.6;
-      const res = await fetch(`${API_URL}/api/admin/requests/${id}/approve`, {method: "POST"});
+      const res = await fetch(`${API_URL}/api/admin/requests/${id}/approve`, {
+        method: "POST",
+        headers: {"ngrok-skip-browser-warning": "1"}
+      });
       const json = await res.json().catch(() => ({}));
       if (!json.ok) {
         alert("Ошибка: " + (json.error || res.status));
@@ -122,7 +133,10 @@
     async function reject(id) {
       const card = document.querySelector(`[data-id="${id}"]`);
       if (card) card.style.opacity = 0.6;
-      const res = await fetch(`${API_URL}/api/admin/requests/${id}/reject`, {method: "POST"});
+      const res = await fetch(`${API_URL}/api/admin/requests/${id}/reject`, {
+        method: "POST",
+        headers: {"ngrok-skip-browser-warning": "1"}
+      });
       const json = await res.json().catch(() => ({}));
       if (!json.ok) {
         alert("Ошибка: " + (json.error || res.status));
