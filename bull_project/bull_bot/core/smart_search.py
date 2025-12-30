@@ -69,11 +69,16 @@ async def get_packages_by_date(date_part: str, force: bool = False) -> dict:
         if not target_tables:
             return {"found": False, "error": "Нет таблиц текущего/следующего года"}
 
+        print(f"🔍 [DEBUG] Поиск пакетов для даты: {date_part}")
+        print(f"📚 [DEBUG] Найдено таблиц: {len(target_tables)} - {list(target_tables.keys())}")
+
         collected: List[dict] = []
 
         for t_name, t_id in target_tables.items():
             try:
                 sheet_names = await _get_sheet_names_cached(t_id, force=False)
+                print(f"📋 [DEBUG] Таблица '{t_name}': {len(sheet_names)} листов")
+                print(f"   Первые 10 листов: {sheet_names[:10]}")
 
                 # выбираем только листы нужной даты
                 # Поддерживаем варианты: "07.03", "7.03", "07.3"
@@ -93,16 +98,20 @@ async def get_packages_by_date(date_part: str, force: bool = False) -> dict:
                 else:
                     date_variants = [date_part]
 
+                print(f"🔎 [DEBUG] Варианты даты для поиска: {date_variants}")
+
                 for sheet_name in sheet_names:
                     clean = (sheet_name or "").strip()
                     # Проверяем все варианты даты
                     for variant in date_variants:
                         if clean.startswith(variant):
                             matched.append(sheet_name)
+                            print(f"✅ [DEBUG] Найден лист: '{sheet_name}' (совпадает с '{variant}')")
                             break  # Нашли совпадение, переходим к следующему листу
 
                 # если в этой таблице на дату нет листов — идём дальше
                 if not matched:
+                    print(f"⚠️ [DEBUG] Нет совпадений в таблице '{t_name}'")
                     continue
 
                 # читаем пакеты только из совпавших листов
