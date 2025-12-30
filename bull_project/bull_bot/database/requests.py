@@ -124,6 +124,19 @@ async def get_pending_requests():
         result = await session.scalars(query)
         return result.all()
 
+async def booking_exists(table_id: str, sheet_name: str, last_name: str, first_name: str):
+    """Проверяем, есть ли уже активная бронь с тем же ФИО на этом листе"""
+    async with async_session() as session:
+        stmt = select(func.count(Booking.id)).where(
+            Booking.table_id == table_id,
+            Booking.sheet_name == sheet_name,
+            func.lower(Booking.guest_last_name) == func.lower(last_name),
+            func.lower(Booking.guest_first_name) == func.lower(first_name),
+            Booking.status.notin_(('cancelled', 'rescheduled'))
+        )
+        cnt = await session.scalar(stmt)
+        return (cnt or 0) > 0
+
 async def get_approval_request(req_id: int):
     async with async_session() as session:
         return await session.get(ApprovalRequest, req_id)
@@ -163,6 +176,17 @@ async def add_booking_to_db(data: dict, manager_id: int):
         import traceback
         traceback.print_exc()
         raise  # Пробрасываем ошибку дальше
+
+async def delete_bookings_by_ids(ids: list[int]):
+    """Удаляет брони по списку id (используется для отката при ошибках)"""
+    if not ids:
+        return
+    async with async_session() as session:
+        stmt = select(Booking).where(Booking.id.in_(ids))
+        bookings = (await session.scalars(stmt)).all()
+        for b in bookings:
+            await session.delete(b)
+        await session.commit()
 
 async def update_booking_row(booking_id: int, row_num: int):
     """Обновляет номер строки после записи в Google"""
@@ -486,10 +510,6 @@ async def get_detailed_stats_by_period(start_date, end_date):
         }
 
 async def get_bookings_by_manager_date_range(manager_id: int, start_date, end_date):
-    """
-    Ищет брони конкретного менеджера в диапазоне дат (включительно).
-    Используется админом при выборе кастомного периода.
-    """
     async with async_session() as session:
         query = select(Booking).where(
             Booking.manager_id == manager_id,
@@ -541,8 +561,7 @@ async def get_full_analytics(start_date, end_date):
                 Booking.status == 'cancelled'
             )
         ) or 0
-
-        # 2. ТОП пакетов (ВСЕ)
+        
         top_packages_stmt = (
             select(Booking.package_name, func.count(Booking.id).label('cnt'))
             .where(
