@@ -11,7 +11,7 @@ _tables_cache = None
 def get_accessible_tables(use_cache=True) -> dict:
     """
     Возвращает словарь всех доступных таблиц: {"Название": "ID"}
-
+ 
     Если USE_TEST_TABLE=true, возвращает только тестовую таблицу.
     В противном случае возвращает все доступные таблицы.
     """
@@ -96,7 +96,13 @@ def get_packages_from_sheet(spreadsheet_id: str, sheet_name: str) -> dict:
         data = ws.get('A1:B200')
 
         packages = {}
-        keywords = ["niyet", "hikma", "izi", "4u", "premium", "econom", "стандарт", "эконом", "comfort"]
+        # Ключевые слова для распознавания строк с пакетами.
+        # Добавлены варианты для Рамадана/месяцев, чтобы находить даты вида 07.03.
+        keywords = [
+            "niyet", "hikma", "izi", "4u", "premium", "econom",
+            "стандарт", "эконом", "comfort",
+            "ramadan", "рамадан", "ramazan", "ramad"
+        ]
 
         for idx, row in enumerate(data, start=1):
             if not row: continue
