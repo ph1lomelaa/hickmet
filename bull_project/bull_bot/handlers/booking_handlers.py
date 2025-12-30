@@ -810,10 +810,9 @@ async def finalize_booking_integrated(message: Message, state: FSMContext, pilgr
             full_name = f"{rec['guest_last_name']} {rec['guest_first_name']}".strip()
             group_members.append(full_name or "-")
 
-        # Один и тот же состав группы сохраняем в каждую запись (JSON строка)
-        group_members_json = json.dumps(group_members, ensure_ascii=False)
+        # Один и тот же состав группы сохраняем в каждую запись (как список - SQLAlchemy конвертирует в JSON)
         for rec in db_records:
-            rec["group_members"] = group_members_json
+            rec["group_members"] = group_members
 
         print(f"👥 Группа сформирована: {group_members}")
 
@@ -1070,12 +1069,8 @@ def _format_admin_booking(booking, title: str, extra: str = "") -> str:
     }
     placement = placement_map.get((booking.placement_type or "").lower(), booking.placement_type or "-")
     created = booking.created_at.strftime("%d.%m.%Y %H:%M") if booking.created_at else "-"
-    group_members = []
-    try:
-        if booking.group_members:
-            group_members = json.loads(booking.group_members)
-    except Exception:
-        group_members = []
+    # group_members теперь автоматически десериализуется SQLAlchemy (тип JSON)
+    group_members = booking.group_members if booking.group_members else []
 
     parts = [
         f"{title}",

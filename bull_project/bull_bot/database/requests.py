@@ -144,28 +144,14 @@ async def add_booking_to_db(data: dict, manager_id: int):
     print(f"\n💾 add_booking_to_db вызвана:")
     print(f"   manager_id: {manager_id}")
     print(f"   data keys: {list(data.keys())}")
-    print(f"   group_members в data: {'group_members' in data}")
-
-    # 🔥 КРИТИЧЕСКИЙ ФИКС: Проверяем, существует ли колонка group_members
-    # Если нет - удаляем из data, чтобы не упасть
-    column_exists = await check_group_members_column_exists()
-
-    if not column_exists and 'group_members' in data:
-        print(f"   ⚠️ ВНИМАНИЕ: Колонка group_members НЕ существует в БД!")
-        print(f"   Временно удаляем group_members из data для сохранения...")
-        removed_value = data.pop('group_members')
-        print(f"   Удалено значение: {removed_value[:100] if removed_value else 'None'}...")
-    elif 'group_members' in data:
-        print(f"   group_members value: {data['group_members'][:100] if data['group_members'] else 'None'}...")
+    if 'group_members' in data:
+        print(f"   group_members: {data['group_members']}")
 
     try:
         async with async_session() as session:
             # manager_id берется отдельно, остальные поля из словаря
-            print(f"   Создание объекта Booking...")
             booking = Booking(manager_id=manager_id, **data)
-            print(f"   ✅ Объект создан, добавление в сессию...")
             session.add(booking)
-            print(f"   Коммит в БД...")
             await session.commit()
             await session.refresh(booking)
             print(f"   ✅ Запись сохранена с ID: {booking.id}")

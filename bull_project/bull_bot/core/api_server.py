@@ -520,10 +520,9 @@ async def api_bookings_submit(payload: BookingSubmitIn):
 
         print(f"📝 Данные для БД подготовлены для {pilgrim.last_name}")
 
-    # Один и тот же состав группы сохраняем в каждую запись (JSON строка)
-    group_members_json = json.dumps(group_members, ensure_ascii=False)
+    # Один и тот же состав группы сохраняем в каждую запись (как список - SQLAlchemy конвертирует в JSON)
     for rec in db_records:
-        rec["group_members"] = group_members_json
+        rec["group_members"] = group_members
 
     # 5. 🔥 СНАЧАЛА запись в Google Sheets
     saved_rows = []
@@ -652,12 +651,8 @@ async def get_manager_history(manager_id: int):
         bookings_data = []
         for b in bookings:
             passport_path = await resolve_passport_path(b)
-            group_members = []
-            if b.group_members:
-                try:
-                    group_members = json.loads(b.group_members)
-                except Exception:
-                    group_members = []
+            # group_members теперь автоматически десериализуется SQLAlchemy (тип JSON)
+            group_members = b.group_members if b.group_members else []
             bookings_data.append( {
                 "id": b.id,
                 "manager_id": b.manager_id,
@@ -1372,12 +1367,8 @@ async def admin_requests():
             booking = await get_booking_by_id(req.booking_id)
             if not booking:
                 continue
-            group_members = []
-            if booking.group_members:
-                try:
-                    group_members = json.loads(booking.group_members)
-                except Exception:
-                    group_members = []
+            # group_members теперь автоматически десериализуется SQLAlchemy (тип JSON)
+            group_members = booking.group_members if booking.group_members else []
             result.append({
                 "id": req.id,
                 "booking_id": booking.id,
