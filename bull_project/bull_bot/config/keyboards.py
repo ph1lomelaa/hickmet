@@ -22,9 +22,9 @@ def care_kb():
     CARE_PACKAGES_URL = "https://ph1lomelaa.github.io/book/package-lists.html"
 
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 Список броней", web_app=WebAppInfo(url=CARE_BOOKINGS_URL))],
-        [InlineKeyboardButton(text="🔎 Найти паломника", web_app=WebAppInfo(url=CARE_SEARCH_URL))],
-        [InlineKeyboardButton(text="📦 Списки по пакетам", web_app=WebAppInfo(url=CARE_PACKAGES_URL))],
+        [InlineKeyboardButton(text="Список броней", web_app=WebAppInfo(url=CARE_BOOKINGS_URL))],
+        [InlineKeyboardButton(text="Найти паломника", web_app=WebAppInfo(url=CARE_SEARCH_URL))],
+        [InlineKeyboardButton(text="Списки по пакетам", web_app=WebAppInfo(url=CARE_PACKAGES_URL))],
     ])
 
 def admin_kb():
@@ -39,7 +39,7 @@ def admin_kb():
         [InlineKeyboardButton(text="Список броней", web_app=WebAppInfo(url=ADMIN_BOOKINGS_URL))],
         [InlineKeyboardButton(text="Создать бронь", callback_data="create_booking")],
         [InlineKeyboardButton(text="Найти паломника", web_app=WebAppInfo(url=CARE_SEARCH_URL))],
-        [InlineKeyboardButton(text="⚠️ Запросы на одобрение", web_app=WebAppInfo(url=ADMIN_REQUESTS_URL))],
+        [InlineKeyboardButton(text="Запросы на отмену/перенос", web_app=WebAppInfo(url=ADMIN_REQUESTS_URL))],
         [InlineKeyboardButton(text="Запросы 4U", callback_data="admin_stats")],
         [InlineKeyboardButton(text="🔔 Настройки уведомлений", callback_data="admin_notify_menu")]
     ])
