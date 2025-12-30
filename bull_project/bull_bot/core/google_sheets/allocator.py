@@ -55,8 +55,17 @@ def find_package_row(all_rows, target_pkg_name):
     target = normalize(target_pkg_name)
     print(f"🔍 Ищем пакет: '{target}'")
 
+    # 🔥 ОТЛАДКА: Показываем первые 30 строк с датами
+    print(f"📋 Первые строки таблицы (отладка):")
+    for i, row in enumerate(all_rows[:30]):
+        row_text = normalize(" ".join(row[:10]))  # Смотрим первые 10 колонок
+        # Показываем строки которые начинаются с цифр (возможные пакеты)
+        if row_text and len(row_text) > 3 and row_text[0].isdigit():
+            print(f"  Строка {i+1}: {row_text[:120]}")
+
+    # 🔥 Расширили поиск с 5 до 10 колонок
     for i, row in enumerate(all_rows):
-        row_text = normalize(" ".join(row[:5]))
+        row_text = normalize(" ".join(row[:10]))
         if target in row_text:
             print(f"✅ Найден пакет в строке {i+1}: {row_text[:100]}")
             return i
@@ -66,12 +75,13 @@ def find_package_row(all_rows, target_pkg_name):
     if len(parts) > 1:
         keyword = parts[-1]
         for i, row in enumerate(all_rows):
-            row_text = normalize(" ".join(row[:5]))
+            row_text = normalize(" ".join(row[:10]))  # 🔥 Расширили поиск
             if keyword in row_text and any(c.isdigit() for c in row_text):
-                print(f"✅ Найден пакет (по ключевому слову) в строке {i+1}")
+                print(f"✅ Найден пакет (по ключевому слову) в строке {i+1}: {row_text[:80]}")
                 return i
 
     print(f"❌ Пакет '{target}' не найден!")
+    print(f"   Искали: '{target}'")
     return None
 
 def find_headers_extended(row):
