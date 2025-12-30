@@ -1245,9 +1245,11 @@
                 }
 
                 const passportPath = uploadJson.path;
+                const parsedData = uploadJson.parsed_data || {};
                 console.log('✅ Паспорт загружен:', passportPath);
+                console.log('📄 Распознанные данные:', parsedData);
 
-                // Обновляем путь к паспорту в БД
+                // Обновляем паспортные данные в БД (БЕЗ имени и фамилии!)
                 const updateRes = await fetch(`${API_URL}/api/bookings/${bookingId}`, {
                     method: 'PATCH',
                     headers: {
@@ -1256,8 +1258,12 @@
                     },
                     body: JSON.stringify({
                         pilgrims: [{
-                            last_name: booking.guest_last_name,
-                            first_name: booking.guest_first_name,
+                            // НЕ отправляем имя и фамилию - оставляем как есть в БД
+                            gender: parsedData.gender,
+                            date_of_birth: parsedData.date_of_birth,
+                            passport_num: parsedData.passport_num,
+                            passport_expiry: parsedData.passport_expiry,
+                            iin: parsedData.iin,
                             passport_image_path: passportPath
                         }]
                     })
@@ -1272,7 +1278,15 @@
                 // Убираем индикатор загрузки
                 document.body.removeChild(loadingDiv);
 
-                alert('✅ Паспорт успешно загружен и сохранен!');
+                // Формируем сообщение о распознанных данных
+                let successMsg = '✅ Паспорт успешно загружен и распознан!\n\n';
+                if (parsedData.gender) successMsg += `👤 Пол: ${parsedData.gender}\n`;
+                if (parsedData.date_of_birth) successMsg += `📅 Дата рождения: ${parsedData.date_of_birth}\n`;
+                if (parsedData.passport_num) successMsg += `🆔 Номер паспорта: ${parsedData.passport_num}\n`;
+                if (parsedData.passport_expiry) successMsg += `⏰ Срок действия: ${parsedData.passport_expiry}\n`;
+                if (parsedData.iin) successMsg += `🔢 ИИН: ${parsedData.iin}\n`;
+
+                alert(successMsg);
 
                 // Перезагружаем список бронирований
                 const user = tg.initDataUnsafe?.user;

@@ -643,8 +643,7 @@ async def get_manager_history(manager_id: int):
 @app.post("/api/passports/upload")
 async def api_passport_upload(file: UploadFile = File(...)):
     """
-    Принимает файл паспорта от бота и сохраняет на стороне API (общий volume).
-    Возвращает путь к сохраненному файлу.
+    Принимает файл паспорта от бота, сохраняет, парсит и возвращает распознанные данные.
     """
     try:
         # Генерируем уникальное имя
@@ -658,7 +657,30 @@ async def api_passport_upload(file: UploadFile = File(...)):
             content = await file.read()
             f.write(content)
 
-        return {"ok": True, "path": target_path}
+        # Парсим паспорт
+        from bull_project.bull_bot.core.parsers.passport_parser import PassportParser
+        parser = PassportParser(debug=True)
+        passport_data = parser.parse(target_path)
+
+        print(f"📄 Паспорт распознан:")
+        print(f"   Пол: {passport_data.gender}")
+        print(f"   Дата рождения: {passport_data.dob}")
+        print(f"   Номер документа: {passport_data.document_number}")
+        print(f"   Срок действия: {passport_data.expiration_date}")
+        print(f"   ИИН: {passport_data.iin}")
+
+        # Возвращаем путь и распознанные данные
+        return {
+            "ok": True,
+            "path": target_path,
+            "parsed_data": {
+                "gender": passport_data.gender or "",
+                "date_of_birth": passport_data.dob or "",
+                "passport_num": passport_data.document_number or "",
+                "passport_expiry": passport_data.expiration_date or "",
+                "iin": passport_data.iin or ""
+            }
+        }
     except Exception as e:
         print(f"❌ Ошибка загрузки паспорта от бота: {e}")
         import traceback
