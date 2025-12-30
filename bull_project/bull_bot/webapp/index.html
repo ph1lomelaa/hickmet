@@ -1066,6 +1066,12 @@
         const price = document.getElementById('price').value;
         if (!pkg || pkg === "" || !price) return alert("Заполните Пакет и Цену!");
 
+        // В режиме редактирования не показываем выбор размещения — сразу сохраняем изменения
+        if (currentMode === 'edit') {
+            finalSubmit();
+            return;
+        }
+
         document.getElementById('step_1').style.display = 'none';
         document.getElementById('step_2').style.display = 'block';
         window.scrollTo(0, 0);
@@ -1119,7 +1125,10 @@
     }
 
     async function finalSubmit() {
-        const method = document.querySelector('input[name="place_method"]:checked').value;
+        // В edit-режиме не изменяем размещение
+        const method = currentMode === 'edit'
+            ? 'auto'
+            : document.querySelector('input[name="place_method"]:checked').value;
         let row = null;
         if (method === 'pick') row = document.getElementById('room_select').value;
         if (method === 'manual') row = document.getElementById('manual_row_input').value;
