@@ -183,9 +183,12 @@ class BookingSubmitIn(BaseModel):
 
 class BookingUpdateIn(BaseModel):
     pilgrims: List[PilgrimData] = []
+    # Пакет/дата не редактируем через PATCH, но можем передать для валидации
     package_name: Optional[str] = None
     sheet_name: Optional[str] = None
     table_id: Optional[str] = None
+    sheet_row_number: Optional[int] = None
+    verify_name: Optional[bool] = False
     departure_city: Optional[str] = None
     room_type: Optional[str] = None
     meal_type: Optional[str] = None
@@ -709,6 +712,7 @@ async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
         # Формируем обновленные данные
         update_fields = {}
 
+        p = None  # будем использовать позже при валидации
         # Обновляем данные паломника если переданы
         if payload.pilgrims and len(payload.pilgrims) > 0:
             p = payload.pilgrims[0]  # Берем первого паломника
@@ -725,10 +729,7 @@ async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
             if p.passport_image_path:
                 await update_booking_passport_path(booking_id, p.passport_image_path)
 
-        # Обновляем общие поля
-        if payload.package_name: update_fields['package_name'] = payload.package_name
-        if payload.sheet_name: update_fields['sheet_name'] = payload.sheet_name
-        if payload.table_id: update_fields['table_id'] = payload.table_id
+        # Обновляем общие поля (пакет/дата/таблица не меняем PATCH'ем)
         if payload.departure_city: update_fields['departure_city'] = payload.departure_city
         if payload.room_type: update_fields['room_type'] = payload.room_type
         if payload.meal_type: update_fields['meal_type'] = payload.meal_type
@@ -753,22 +754,70 @@ async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
 
         # 🔥 ОБНОВЛЕНИЕ GOOGLE SHEETS
         sheets_updated = False
-        if booking.sheet_row_number and booking.table_id and booking.sheet_name:
+        # Берем строку из payload, если пришла, иначе из брони
+        target_row = payload.sheet_row_number or booking.sheet_row_number
+        target_table_id = booking.table_id
+        target_sheet = booking.sheet_name
+        target_pkg = booking.package_name
+
+        # Проверяем ФИО в строке перед обновлением, если запрошена валидация
+        def _norm(val: str) -> str:
+            return (val or "").strip().lower()
+
+        if payload.verify_name and target_row and target_table_id and target_sheet:
+            try:
+                from bull_project.bull_bot.core.google_sheets.client import get_google_client
+                from bull_project.bull_bot.core.google_sheets.allocator import find_headers_extended, find_package_row
+                from bull_project.bull_bot.core.google_sheets.writer import get_worksheet_by_title
+
+                client = get_google_client()
+                if client:
+                    ss = client.open_by_key(target_table_id)
+                    ws = get_worksheet_by_title(ss, target_sheet)
+                    all_values = ws.get_all_values()
+
+                    pkg_row = find_package_row(all_values, target_pkg)
+                    cols = None
+                    if pkg_row is not None:
+                        for r in range(pkg_row, min(pkg_row + 30, len(all_values))):
+                            cols = find_headers_extended(all_values[r])
+                            if cols:
+                                break
+
+                    if cols and 'last_name' in cols and 'first_name' in cols:
+                        row_idx0 = target_row - 1
+                        sheet_last = all_values[row_idx0][cols['last_name']] if row_idx0 < len(all_values) and cols['last_name'] < len(all_values[row_idx0]) else ""
+                        sheet_first = all_values[row_idx0][cols['first_name']] if row_idx0 < len(all_values) and cols['first_name'] < len(all_values[row_idx0]) else ""
+
+                        expected_last = p.last_name if (p and p.last_name) else booking.guest_last_name
+                        expected_first = p.first_name if (p and p.first_name) else booking.guest_first_name
+
+                        if _norm(sheet_last) != _norm(expected_last) or _norm(sheet_first) != _norm(expected_first):
+                            return JSONResponse(
+                                status_code=409,
+                                content={"ok": False, "error": "Строка в таблице не совпадает с ФИО. Изменения не применены."}
+                            )
+            except Exception as e:
+                print(f"⚠️ Ошибка проверки ФИО в таблице: {e}")
+                # Если проверка не удалась технически, не блокируем обновление
+                pass
+
+        if target_row and target_table_id and target_sheet:
             try:
                 from bull_project.bull_bot.core.google_sheets.client import get_google_client, get_sheet_data
                 from bull_project.bull_bot.core.google_sheets.allocator import find_headers_extended, find_package_row
                 from bull_project.bull_bot.core.google_sheets.writer import get_worksheet_by_title, row_col_to_a1
 
-                print(f"📝 Обновление Google Sheets (строка {booking.sheet_row_number})")
+                print(f"📝 Обновление Google Sheets (строка {target_row})")
 
                 client = get_google_client()
                 if client:
-                    ss = client.open_by_key(booking.table_id)
-                    ws = get_worksheet_by_title(ss, booking.sheet_name)
+                    ss = client.open_by_key(target_table_id)
+                    ws = get_worksheet_by_title(ss, target_sheet)
                     all_values = ws.get_all_values()
 
                     # Находим заголовки колонок в пакете
-                    pkg_row = find_package_row(all_values, booking.package_name)
+                    pkg_row = find_package_row(all_values, target_pkg)
                     cols = None
                     if pkg_row is not None:
                         for r in range(pkg_row, min(pkg_row + 30, len(all_values))):
@@ -779,7 +828,7 @@ async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
                     if cols:
                         # Формируем обновления для Google Sheets
                         updates = []
-                        row_num = booking.sheet_row_number
+                        row_num = target_row
 
                         # Обновляем данные паломника
                         if 'guest_last_name' in update_fields and 'last_name' in cols:

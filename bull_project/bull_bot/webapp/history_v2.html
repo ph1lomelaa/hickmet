@@ -1173,39 +1173,72 @@
         `;
     }
 
+    let editingBookingId = null;
+
     function startEditData(bookingId) {
         const booking = allBookings.find(b => b.id === bookingId);
         if (!booking) return;
 
-        // Формируем данные паломника для передачи в index.html
-        const pilgrim = {
-            last_name: booking.guest_last_name || "-",
-            first_name: booking.guest_first_name || "-",
-            gender: booking.gender || "M",
-            date_of_birth: booking.date_of_birth || "-",
-            passport_num: booking.passport_num || "-",
-            passport_expiry: booking.passport_expiry || "-",
-            iin: booking.guest_iin || "-",
-            phone: booking.client_phone || "-",
-            passport_image_path: booking.passport_image_path || null
-        };
-
-        // Кодируем данные для URL
-        const pilgrimsParam = encodeURIComponent(JSON.stringify([pilgrim]));
-
-        // Формируем относительный URL для index.html (в той же директории)
-        const params = new URLSearchParams();
-        params.set('pilgrims', pilgrimsParam);
-        params.set('mode', 'edit');
-        params.set('booking_id', booking.id);
-
-        const targetUrl = `index.html?${params.toString()}`;
-
         console.log('✏️ Открываю редактирование брони #', booking.id);
-        console.log('URL:', targetUrl);
 
-        // Переходим на форму редактирования
-        window.location.href = targetUrl;
+        // Сохраняем ID редактируемой брони
+        editingBookingId = bookingId;
+
+        // Заполняем форму текущими данными
+        document.getElementById('edit-phone').value = booking.client_phone || '';
+        document.getElementById('edit-amount-paid').value = booking.amount_paid || '';
+        document.getElementById('edit-comment').value = booking.comment || '';
+
+        // Открываем модалку редактирования
+        document.getElementById('edit-modal').classList.add('active');
+    }
+
+    function closeEditModal() {
+        document.getElementById('edit-modal').classList.remove('active');
+        editingBookingId = null;
+    }
+
+    async function saveEditedData() {
+        if (!editingBookingId) return;
+
+        const phone = document.getElementById('edit-phone').value.trim();
+        const amountPaid = document.getElementById('edit-amount-paid').value.trim();
+        const comment = document.getElementById('edit-comment').value.trim();
+
+        try {
+            const updateRes = await fetch(`${API_URL}/api/bookings/${editingBookingId}`, {
+                method: 'PATCH',
+                headers: {
+                    "Content-Type": "application/json",
+                    "ngrok-skip-browser-warning": "1"
+                },
+                body: JSON.stringify({
+                    pilgrims: [{
+                        phone: phone || null
+                    }],
+                    amount_paid: amountPaid || null,
+                    comment: comment || null
+                })
+            });
+
+            const updateJson = await updateRes.json();
+
+            if (!updateRes.ok || !updateJson.ok) {
+                throw new Error(updateJson.error || 'Ошибка обновления данных');
+            }
+
+            alert('✅ Данные успешно обновлены!');
+
+            // Закрываем модалку
+            closeEditModal();
+
+            // Перезагружаем список бронирований
+            const user = tg.initDataUnsafe?.user;
+            await loadBookings(urlManagerId || user?.id || 0);
+
+        } catch (err) {
+            alert('❌ Ошибка обновления: ' + err.message);
+        }
     }
 
     async function startUploadPassport(bookingId) {
@@ -1307,6 +1340,12 @@
     document.getElementById('detail-modal').addEventListener('click', function(e) {
         if (e.target === this) {
             closeModal();
+        }
+    });
+
+    document.getElementById('edit-modal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeEditModal();
         }
     });
 
