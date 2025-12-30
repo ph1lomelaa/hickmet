@@ -575,17 +575,54 @@ async def api_bookings_submit(payload: BookingSubmitIn):
         print(f"\n💾 Сохранение в БД для {record_db['guest_last_name']}:")
         print(f"   sheet_row_number: {record_db['sheet_row_number']}")
         print(f"   passport_num: {record_db['passport_num']}")
+        print(f"   group_members present: {'group_members' in record_db}")
 
-        booking_id = await add_booking_to_db(record_db, manager_id)
-        db_ids.append(booking_id)
-        print(f"✅ ID записи в БД: {booking_id}")
+        try:
+            booking_id = await add_booking_to_db(record_db, manager_id)
+            db_ids.append(booking_id)
+            print(f"✅ ID записи в БД: {booking_id}")
+        except Exception as e:
+            print(f"❌ КРИТИЧЕСКАЯ ОШИБКА при сохранении в БД:")
+            print(f"   Паломник: {record_db['guest_last_name']} {record_db['guest_first_name']}")
+            print(f"   Ошибка: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # НЕ прерываем цикл - пытаемся сохранить остальных
+            continue
 
         # Уведомления шлет bot-worker. API не отправляет, чтобы избежать bot=None.
         print(f"ℹ️ Бронь #{booking_id} создана. Уведомление отправит bot-worker.")
 
     print("\n" + "="*60)
+
+    # Проверяем, все ли паломники сохранились в БД
+    expected_count = len(payload.pilgrims)
+    saved_count = len(db_ids)
+
+    if saved_count < expected_count:
+        print(f"⚠️ ЧАСТИЧНЫЙ УСПЕХ")
+        print(f"   Ожидалось паломников: {expected_count}")
+        print(f"   Сохранено в БД: {saved_count}")
+        print(f"   ПОТЕРЯНО: {expected_count - saved_count}")
+        print(f"   Строки в таблице: {saved_rows}")
+        print(f"   ID записей в БД: {db_ids}")
+        print("="*60 + "\n")
+
+        return JSONResponse(
+            status_code=207,  # Multi-Status
+            content={
+                "ok": False,
+                "partial": True,
+                "error": f"Не все паломники сохранились в БД! Сохранено {saved_count} из {expected_count}",
+                "db_ids": db_ids,
+                "saved_rows": saved_rows,
+                "expected": expected_count,
+                "saved": saved_count
+            }
+        )
+
     print("✅ ЗАПРОС УСПЕШНО ОБРАБОТАН")
-    print(f"   Записано паломников: {len(payload.pilgrims)}")  # 🔥 ИСПРАВЛЕНО
+    print(f"   Записано паломников: {saved_count}")
     print(f"   Строки в таблице: {saved_rows}")
     print(f"   ID записей в БД: {db_ids}")
     print("="*60 + "\n")

@@ -120,13 +120,33 @@ async def delete_user(tg_id: int):
 async def add_booking_to_db(data: dict, manager_id: int):
     """Принимает словарь полей и создает запись Booking"""
     await ensure_group_members_column()
-    async with async_session() as session:
-        # manager_id берется отдельно, остальные поля из словаря
-        booking = Booking(manager_id=manager_id, **data)
-        session.add(booking)
-        await session.commit()
-        await session.refresh(booking)
-        return booking.id
+
+    print(f"\n💾 add_booking_to_db вызвана:")
+    print(f"   manager_id: {manager_id}")
+    print(f"   data keys: {list(data.keys())}")
+    print(f"   group_members в data: {'group_members' in data}")
+    if 'group_members' in data:
+        print(f"   group_members value: {data['group_members'][:100] if data['group_members'] else 'None'}...")
+
+    try:
+        async with async_session() as session:
+            # manager_id берется отдельно, остальные поля из словаря
+            print(f"   Создание объекта Booking...")
+            booking = Booking(manager_id=manager_id, **data)
+            print(f"   ✅ Объект создан, добавление в сессию...")
+            session.add(booking)
+            print(f"   Коммит в БД...")
+            await session.commit()
+            await session.refresh(booking)
+            print(f"   ✅ Запись сохранена с ID: {booking.id}")
+            return booking.id
+    except Exception as e:
+        print(f"❌ ОШИБКА в add_booking_to_db:")
+        print(f"   Тип ошибки: {type(e).__name__}")
+        print(f"   Сообщение: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise  # Пробрасываем ошибку дальше
 
 async def update_booking_row(booking_id: int, row_num: int):
     """Обновляет номер строки после записи в Google"""
