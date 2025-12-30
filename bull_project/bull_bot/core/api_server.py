@@ -430,13 +430,25 @@ async def api_bookings_submit(payload: BookingSubmitIn):
     }
 
     # 4. Проверка пола у всех паломников
-    for pilgrim in payload.pilgrims:
+    print(f"\n🔍 ПРОВЕРКА ПОЛА всех паломников:")
+    for idx, pilgrim in enumerate(payload.pilgrims):
         gen = (pilgrim.gender or "").strip().upper()
+        print(f"   Паломник {idx+1}: {pilgrim.last_name} {pilgrim.first_name}")
+        print(f"      gender RAW: '{pilgrim.gender}'")
+        print(f"      gender NORMALIZED: '{gen}'")
         if gen not in ("M", "F"):
+            error_msg = f"❌ Пол не указан или некорректен для паломника {idx+1}: {pilgrim.last_name} {pilgrim.first_name} (получено: '{pilgrim.gender}')"
+            print(error_msg)
             return JSONResponse(
                 status_code=400,
-                content={"ok": False, "error": "Укажите пол для всех паломников перед размещением"}
+                content={
+                    "ok": False,
+                    "error": f"Укажите пол (M/F) для паломника: {pilgrim.last_name} {pilgrim.first_name}",
+                    "pilgrim_index": idx,
+                    "pilgrim_name": f"{pilgrim.last_name} {pilgrim.first_name}"
+                }
             )
+    print(f"✅ Все паломники имеют корректный пол")
 
     # 5. Формирование данных для Google Sheets
     group_data_for_sheets: List[Dict[str, Any]] = []

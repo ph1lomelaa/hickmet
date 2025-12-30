@@ -546,12 +546,18 @@ async def send_webapp_link(message: Message, state: FSMContext):
 
     # 🔥 ИСПРАВЛЕНИЕ: Передаем ПОЛНЫЕ данные паспорта включая путь к фото
     p_full_data = []
-    for p in pilgrims:
+    print(f"\n🔍 ФОРМИРОВАНИЕ ДАННЫХ ДЛЯ WEBAPP:")
+    for idx, p in enumerate(pilgrims):
+        gender_raw = p.get('Gender')
+        print(f"  Паломник {idx+1}: {p.get('Last Name', '?')} {p.get('First Name', '?')}")
+        print(f"     Gender RAW из паспорта: '{gender_raw}'")
+        print(f"     Gender FINAL: '{gender_raw or 'M'}'")
+
         p_full_data.append({
             "name": f"{p.get('Last Name', '-')} {p.get('First Name', '-')}",
             "last_name": p.get('Last Name', '-'),
             "first_name": p.get('First Name', '-'),
-            "gender": p.get('Gender', 'M'),
+            "gender": gender_raw or 'M',  # Используем оригинальный пол или 'M' по умолчанию
             "date_of_birth": p.get('Date of Birth', '-'),
             "passport_num": p.get('Document Number', '-'),
             "passport_expiry": p.get('Document Expiration', '-'),
