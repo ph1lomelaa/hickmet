@@ -88,11 +88,12 @@ async def save_group_booking(group_data: list, common_data: dict, placement_mode
             for i, (person_passport, row_idx) in enumerate(zip(group_data, saved_rows)):
                 full_data = {**common_data, **person_passport}
                 _prepare_updates(updates, price_tasks, row_idx, cols, full_data)
-                # Планируем окраску имени/фамилии
-                for key in ("last_name", "first_name"):
-                    if key in cols:
-                        a1 = row_col_to_a1(row_idx, cols[key] + 1)
-                        color_tasks.append(a1)
+                # Планируем окраску имени/фамилии ТОЛЬКО для группы (больше 1 человека)
+                if len(group_data) > 1:
+                    for key in ("last_name", "first_name"):
+                        if key in cols:
+                            a1 = row_col_to_a1(row_idx, cols[key] + 1)
+                            color_tasks.append(a1)
 
         elif specific_row:
             # Старая логика для specific_row (ручное размещение)
@@ -108,10 +109,12 @@ async def save_group_booking(group_data: list, common_data: dict, placement_mode
                 saved_rows.append(row_idx)
                 full_data = {**common_data, **person_passport}
                 _prepare_updates(updates, price_tasks, row_idx, cols, full_data)
-                for key in ("last_name", "first_name"):
-                    if key in cols:
-                        a1 = row_col_to_a1(row_idx, cols[key] + 1)
-                        color_tasks.append(a1)
+                # Планируем окраску имени/фамилии ТОЛЬКО для группы (больше 1 человека)
+                if len(group_data) > 1:
+                    for key in ("last_name", "first_name"):
+                        if key in cols:
+                            a1 = row_col_to_a1(row_idx, cols[key] + 1)
+                            color_tasks.append(a1)
         else:
             print(f"❌ Пустой список паломников")
             return []
@@ -183,10 +186,23 @@ def _prepare_updates(updates_list, price_tasks, row_idx, cols, data):
         'source': data.get('source', '')
     }
 
+    # Отладка для train - проверяем есть ли колонка в таблице
+    if "train" in mapping and "train" not in cols:
+        print(f"⚠️ TRAIN: Колонка 'train' НЕ найдена в таблице! Доступные колонки: {list(cols.keys())}")
+    elif "train" in mapping and "train" in cols:
+        print(f"✅ TRAIN: Колонка 'train' найдена в таблице (индекс {cols['train']}), значение = '{mapping.get('train')}'")
+
     for col_key, value in mapping.items():
         if col_key in cols:
             val_str = str(value).strip()
-            if not val_str or val_str in ["-", "skip", "None"]: continue
+            if not val_str or val_str in ["-", "skip", "None"]:
+                # Отладка для train
+                if col_key == "train":
+                    print(f"⚠️ TRAIN пропущен: значение = '{val_str}'")
+                continue
+            # Отладка для train
+            if col_key == "train":
+                print(f"✅ TRAIN будет записан: значение = '{val_str}'")
             # Цена и оплата — записываем как число и отмечаем для форматирования
             if col_key in ("price", "amount_paid"):
                 clean = val_str.replace("$", "").replace(" ", "").replace(",", "")
