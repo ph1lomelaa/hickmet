@@ -12,9 +12,29 @@ async def ensure_group_members_column():
     try:
         async with engine.begin() as conn:
             await conn.execute(text("ALTER TABLE bookings ADD COLUMN group_members TEXT"))
-    except Exception:
+            print("✅ Колонка group_members добавлена")
+    except Exception as e:
         # Уже есть или нет прав — тихо игнорируем
+        print(f"ℹ️ Колонка group_members уже существует или нет прав: {type(e).__name__}")
         pass
+
+async def check_group_members_column_exists():
+    """Проверяет, существует ли колонка group_members в таблице bookings"""
+    try:
+        async with engine.begin() as conn:
+            # PostgreSQL
+            result = await conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='bookings' AND column_name='group_members'
+            """))
+            exists = result.fetchone() is not None
+            print(f"🔍 Проверка колонки group_members: {'существует' if exists else 'НЕ существует'}")
+            return exists
+    except Exception as e:
+        # SQLite или другая ошибка - считаем что колонки нет
+        print(f"⚠️ Не удалось проверить колонку group_members: {type(e).__name__}")
+        return False
 
 # === ПОЛЬЗОВАТЕЛИ ===
 
@@ -125,7 +145,17 @@ async def add_booking_to_db(data: dict, manager_id: int):
     print(f"   manager_id: {manager_id}")
     print(f"   data keys: {list(data.keys())}")
     print(f"   group_members в data: {'group_members' in data}")
-    if 'group_members' in data:
+
+    # 🔥 КРИТИЧЕСКИЙ ФИКС: Проверяем, существует ли колонка group_members
+    # Если нет - удаляем из data, чтобы не упасть
+    column_exists = await check_group_members_column_exists()
+
+    if not column_exists and 'group_members' in data:
+        print(f"   ⚠️ ВНИМАНИЕ: Колонка group_members НЕ существует в БД!")
+        print(f"   Временно удаляем group_members из data для сохранения...")
+        removed_value = data.pop('group_members')
+        print(f"   Удалено значение: {removed_value[:100] if removed_value else 'None'}...")
+    elif 'group_members' in data:
         print(f"   group_members value: {data['group_members'][:100] if data['group_members'] else 'None'}...")
 
     try:
