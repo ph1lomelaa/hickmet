@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from .models import User, Booking, Request4U, AdminSettings, ApprovalRequest
 from .setup import async_session, engine
 
-
+ 
 async def ensure_group_members_column():
     """
     Мягко добавляем колонку group_members, если ее еще нет (SQLite/Postgres).
