@@ -837,166 +837,21 @@ async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
         if payload.manager_name_text: update_fields['manager_name_text'] = payload.manager_name_text
         if payload.comment: update_fields['comment'] = payload.comment
 
-        # Определяем, что обновляются только паспортные поля — в этом случае Sheets не трогаем
-        passport_fields = {"passport_image_path", "passport_num", "passport_expiry", "guest_iin", "gender", "date_of_birth"}
-        passport_only_update = (
-            (p and p.passport_image_path and len(update_fields) == 0)  # только файл паспорта
-            or (len(update_fields) > 0 and set(update_fields.keys()).issubset(passport_fields))
-        )
-
         # Обновляем в БД
         await update_booking_fields(booking_id, update_fields)
 
         print(f"✅ Бронь #{booking_id} успешно обновлена в БД")
         print(f"   Обновлено полей: {len(update_fields)}")
 
-        # 🔥 ОБНОВЛЕНИЕ GOOGLE SHEETS
-        # Если меняем только паспортные поля, таблицу не трогаем и не валидируем ФИО
-        if passport_only_update:
-            return JSONResponse(status_code=200, content={"ok": True, "sheets_updated": False, "db_updated": True})
-
-        sheets_updated = False
-        # Берем строку из payload, если пришла, иначе из брони
-        target_row = payload.sheet_row_number or booking.sheet_row_number
-        target_table_id = booking.table_id
-        target_sheet = booking.sheet_name
-        target_pkg = booking.package_name
-
-        # Проверяем ФИО в строке перед обновлением, если запрошена валидация
-        def _norm(val: str) -> str:
-            return (val or "").strip().lower()
-
-        # Проверка ФИО в строке таблицы: всегда, если есть строка/таблица/лист
-        if target_row and target_table_id and target_sheet:
-            try:
-                from bull_project.bull_bot.core.google_sheets.client import get_google_client
-                from bull_project.bull_bot.core.google_sheets.allocator import find_headers_extended, find_package_row
-                from bull_project.bull_bot.core.google_sheets.writer import get_worksheet_by_title
-
-                client = get_google_client()
-                if client:
-                    ss = client.open_by_key(target_table_id)
-                    ws = get_worksheet_by_title(ss, target_sheet)
-                    all_values = ws.get_all_values()
-
-                    # Находим блок пакета, но если не нашли — продолжаем искать заголовки по всему листу
-                    pkg_row = find_package_row(all_values, target_pkg) if target_pkg else None
-                    cols = None
-                    search_start = pkg_row if pkg_row is not None else 0
-                    for r in range(search_start, min(search_start + 50, len(all_values))):
-                        cols = find_headers_extended(all_values[r])
-                        if cols:
-                            break
-
-                    if cols and 'last_name' in cols and 'first_name' in cols and target_row - 1 < len(all_values):
-                        row_idx0 = target_row - 1
-                        row_vals = all_values[row_idx0]
-                        sheet_last = row_vals[cols['last_name']] if cols['last_name'] < len(row_vals) else ""
-                        sheet_first = row_vals[cols['first_name']] if cols['first_name'] < len(row_vals) else ""
-
-                        expected_last = p.last_name if (p and p.last_name) else booking.guest_last_name
-                        expected_first = p.first_name if (p and p.first_name) else booking.guest_first_name
-
-                        if _norm(sheet_last) != _norm(expected_last) or _norm(sheet_first) != _norm(expected_first):
-                            return JSONResponse(
-                                status_code=409,
-                                content={"ok": False, "error": "Строка в таблице не совпадает с ФИО. Изменения не применены."}
-                            )
-            except Exception as e:
-                print(f"⚠️ Ошибка проверки ФИО в таблице: {e}")
-                # Если проверка не удалась технически, не блокируем обновление
-                pass
-
-        if target_row and target_table_id and target_sheet:
-            try:
-                from bull_project.bull_bot.core.google_sheets.client import get_google_client, get_sheet_data
-                from bull_project.bull_bot.core.google_sheets.allocator import find_headers_extended, find_package_row
-                from bull_project.bull_bot.core.google_sheets.writer import get_worksheet_by_title, row_col_to_a1
-
-                print(f"📝 Обновление Google Sheets (строка {target_row})")
-
-                client = get_google_client()
-                if client:
-                    ss = client.open_by_key(target_table_id)
-                    ws = get_worksheet_by_title(ss, target_sheet)
-                    all_values = ws.get_all_values()
-
-                    # Находим заголовки колонок в пакете
-                    pkg_row = find_package_row(all_values, target_pkg)
-                    cols = None
-                    if pkg_row is not None:
-                        for r in range(pkg_row, min(pkg_row + 30, len(all_values))):
-                            cols = find_headers_extended(all_values[r])
-                            if cols:
-                                break
-
-                    if cols:
-                        # Формируем обновления для Google Sheets
-                        updates = []
-                        row_num = target_row
-
-                        # Обновляем данные паломника
-                        if 'guest_last_name' in update_fields and 'last_name' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['last_name'] + 1)}",
-                                          'values': [[update_fields['guest_last_name']]]})
-                        if 'guest_first_name' in update_fields and 'first_name' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['first_name'] + 1)}",
-                                          'values': [[update_fields['guest_first_name']]]})
-                        if 'gender' in update_fields and 'gender' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['gender'] + 1)}",
-                                          'values': [[update_fields['gender']]]})
-                        if 'date_of_birth' in update_fields and 'dob' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['dob'] + 1)}",
-                                          'values': [[update_fields['date_of_birth']]]})
-                        if 'passport_num' in update_fields and 'doc_num' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['doc_num'] + 1)}",
-                                          'values': [[update_fields['passport_num']]]})
-                        if 'passport_expiry' in update_fields and 'doc_exp' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['doc_exp'] + 1)}",
-                                          'values': [[update_fields['passport_expiry']]]})
-                        if 'guest_iin' in update_fields and 'iin' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['iin'] + 1)}",
-                                          'values': [[update_fields['guest_iin']]]})
-                        if 'client_phone' in update_fields and 'client_phone' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['client_phone'] + 1)}",
-                                          'values': [[update_fields['client_phone']]]})
-
-                        # Обновляем общие поля
-                        if 'price' in update_fields and 'price' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['price'] + 1)}",
-                                          'values': [[update_fields['price']]]})
-                        if 'comment' in update_fields and 'comment' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['comment'] + 1)}",
-                                          'values': [[update_fields['comment']]]})
-                        if 'manager_name_text' in update_fields and 'manager' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['manager'] + 1)}",
-                                          'values': [[update_fields['manager_name_text']]]})
-                        if 'train' in update_fields and 'train' in cols:
-                            updates.append({'range': f"{row_col_to_a1(row_num, cols['train'] + 1)}",
-                                          'values': [[update_fields['train']]]})
-
-                        # Применяем обновления
-                        if updates:
-                            ws.batch_update(updates)
-                            sheets_updated = True
-                            print(f"✅ Google Sheets обновлен ({len(updates)} полей)")
-                        else:
-                            print(f"⚠️ Нет полей для обновления в Google Sheets")
-                    else:
-                        print(f"⚠️ Не найдены заголовки колонок для пакета {booking.package_name}")
-            except Exception as e:
-                print(f"⚠️ Ошибка обновления Google Sheets: {e}")
-                import traceback
-                traceback.print_exc()
-                # Продолжаем даже если обновление Sheets не удалось
-
-        return {
+        # 🔥 По требованию: при обновлении/загрузке паспорта Google Sheets не трогаем вообще
+        return JSONResponse(status_code=200, content={
             "ok": True,
             "booking_id": booking_id,
             "updated_fields": len(update_fields),
-            "sheets_updated": sheets_updated,
-            "message": "Бронь успешно обновлена"
-        }
+            "sheets_updated": False,
+            "db_updated": True,
+            "message": "Бронь обновлена (без изменений в Google Sheets)"
+        })
 
     except Exception as e:
         print(f"❌ Ошибка обновления брони: {e}")
