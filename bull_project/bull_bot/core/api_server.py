@@ -839,7 +839,10 @@ async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
 
         # Определяем, что обновляются только паспортные поля — в этом случае Sheets не трогаем
         passport_fields = {"passport_image_path", "passport_num", "passport_expiry", "guest_iin", "gender", "date_of_birth"}
-        passport_only_update = set(update_fields.keys()).issubset(passport_fields) and len(update_fields) > 0
+        passport_only_update = (
+            (p and p.passport_image_path and len(update_fields) == 0)  # только файл паспорта
+            or (len(update_fields) > 0 and set(update_fields.keys()).issubset(passport_fields))
+        )
 
         # Обновляем в БД
         await update_booking_fields(booking_id, update_fields)
