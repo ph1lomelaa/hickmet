@@ -29,27 +29,34 @@ class PassportPDFGenerator:
         Извлекает текст с координатами из изображения
         Возвращает список (bbox, text, confidence)
         """
+        temp_path = None
         try:
-            # Конвертируем в JPEG если нужно
-            if not image_path.lower().endswith(('.jpg', '.jpeg')):
-                img = Image.open(image_path)
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                temp_jpg = image_path.rsplit('.', 1)[0] + '_temp_pdf.jpg'
-                img.save(temp_jpg, 'JPEG', quality=95)
-                image_path = temp_jpg
+            # Конвертируем и улучшаем изображение для OCR
+            img = Image.open(image_path)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
 
-            # Распознаем текст с координатами (с повышенной контрастностью)
+            # Небольшое увеличение и усиление контраста/резкости
+            scale = 1.4
+            new_size = (int(img.width * scale), int(img.height * scale))
+            img = img.resize(new_size, Image.LANCZOS)
+
+            from PIL import ImageEnhance
+            img = ImageEnhance.Contrast(img).enhance(1.35)
+            img = ImageEnhance.Sharpness(img).enhance(1.2)
+
+            # Сохраняем во временный JPG для easyocr
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tf:
+                temp_path = tf.name
+                img.save(temp_path, 'JPEG', quality=96)
+
+            # Распознаем текст с координатами
             result = self.reader.readtext(
-                image_path,
-                paragraph=False,  # Не объединяем в параграфы
-                contrast_ths=0.3,  # Повышенный контраст для лучшего распознавания
-                adjust_contrast=0.7  # Автоматическая настройка контраста
+                temp_path,
+                paragraph=False,     # Не объединяем в параграфы
+                contrast_ths=0.3,
+                adjust_contrast=0.7
             )
-
-            # Удаляем временный файл
-            if '_temp_pdf.jpg' in image_path:
-                os.remove(image_path)
 
             if self.debug:
                 print(f"📄 Распознано {len(result)} текстовых блоков")
@@ -63,6 +70,12 @@ class PassportPDFGenerator:
             if self.debug:
                 print(f"❌ Ошибка OCR: {e}")
             return []
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
 
     def create_searchable_pdf(
         self,
