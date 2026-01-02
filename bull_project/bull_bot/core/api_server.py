@@ -143,6 +143,18 @@ async def resolve_passport_path(booking) -> Optional[str]:
         )
     return passport_path
 
+def make_abs_passport_path(path: Optional[str]) -> Optional[str]:
+    """
+    Приводит путь к паспорту к абсолютному:
+    - если уже абсолютный – возвращаем как есть;
+    - если относительный – добавляем ABS_UPLOADS_DIR.
+    """
+    if not path:
+        return None
+    if os.path.isabs(path):
+        return path
+    return os.path.join(ABS_UPLOADS_DIR, path)
+
 # -----------------------------------------------------------------------------
 # МОДЕЛИ ДАННЫХ (Pydantic)
 # -----------------------------------------------------------------------------
@@ -1067,14 +1079,8 @@ async def get_passport_photo(booking_id: int):
                 content={"ok": False, "error": "Фото паспорта не найдено"}
             )
 
-        # Путь к файлу паспорта
-        file_path = os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            "tmp",
-            "uploads",
-            booking.passport_image_path
-        )
+        # Путь к файлу паспорта (учитываем абсолютный/относительный)
+        file_path = make_abs_passport_path(booking.passport_image_path)
 
         if not os.path.exists(file_path):
             return JSONResponse(
@@ -1086,7 +1092,7 @@ async def get_passport_photo(booking_id: int):
         return FileResponse(
             path=file_path,
             media_type="application/octet-stream",
-            filename=booking.passport_image_path
+            filename=os.path.basename(file_path)
         )
 
     except Exception as e:
@@ -1722,6 +1728,8 @@ async def get_passport_photo(booking_id: int):
                 status_code=404,
                 content={"ok": False, "error": "No passport image for this booking"}
             )
+
+        passport_path = make_abs_passport_path(passport_path)
 
         # Проверяем существование файла
         if not os.path.exists(passport_path):
