@@ -837,6 +837,10 @@ async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
         if payload.manager_name_text: update_fields['manager_name_text'] = payload.manager_name_text
         if payload.comment: update_fields['comment'] = payload.comment
 
+        # Определяем, что обновляются только паспортные поля — в этом случае Sheets не трогаем
+        passport_fields = {"passport_image_path", "passport_num", "passport_expiry", "guest_iin", "gender", "date_of_birth"}
+        passport_only_update = set(update_fields.keys()).issubset(passport_fields) and len(update_fields) > 0
+
         # Обновляем в БД
         await update_booking_fields(booking_id, update_fields)
 
@@ -844,6 +848,10 @@ async def update_booking_endpoint(booking_id: int, payload: BookingUpdateIn):
         print(f"   Обновлено полей: {len(update_fields)}")
 
         # 🔥 ОБНОВЛЕНИЕ GOOGLE SHEETS
+        # Если меняем только паспортные поля, таблицу не трогаем и не валидируем ФИО
+        if passport_only_update:
+            return JSONResponse(status_code=200, content={"ok": True, "sheets_updated": False, "db_updated": True})
+
         sheets_updated = False
         # Берем строку из payload, если пришла, иначе из брони
         target_row = payload.sheet_row_number or booking.sheet_row_number
