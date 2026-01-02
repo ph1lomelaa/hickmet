@@ -1255,9 +1255,10 @@
                     throw new Error(uploadJson.error || `Ошибка загрузки: ${uploadRes.status}`);
                 }
 
-                const parsedData = uploadJson.parsed_data || uploadJson.data || {};
                 const passportPath = uploadJson.path;
+                const parsedData = uploadJson.parsed_data || {};
 
+                // Только сохраняем файл, НЕ перезаписываем паспортные данные
                 const patchBody = {
                     verify_name: true,
                     sheet_row_number: booking.sheet_row_number,
@@ -1265,12 +1266,6 @@
                     sheet_name: booking.sheet_name,
                     table_id: booking.table_id,
                     pilgrims: [{
-                        // имя/фамилию не трогаем
-                        gender: parsedData.gender,
-                        date_of_birth: parsedData.date_of_birth,
-                        passport_num: parsedData.passport_num,
-                        passport_expiry: parsedData.passport_expiry,
-                        iin: parsedData.iin,
                         passport_image_path: passportPath
                     }]
                 };

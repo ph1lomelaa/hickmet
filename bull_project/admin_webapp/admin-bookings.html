@@ -288,8 +288,37 @@
             width: 100%;
             border-radius: 12px;
             border: 2px solid var(--border-color);
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             object-fit: cover;
+        }
+
+        .passport-container {
+            position: relative;
+            margin-bottom: 12px;
+        }
+
+        .download-pdf-btn {
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 8px;
+            box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+        }
+
+        .download-pdf-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+        }
+
+        .download-pdf-btn:active {
+            transform: translateY(0);
         }
 
         .booking-detail {
@@ -586,21 +615,23 @@
                     rescheduled: 'ПЕРЕНОС',
                     new: 'АКТИВНА'
                 };
-                const statusText = statusTextMap[status] || (status ? status.toUpperCase() : 'АКТИВНА');
+            const statusText = statusTextMap[status] || (status ? status.toUpperCase() : 'АКТИВНА');
 
-                const createdLabel = formatDateTime(booking.created_at);
-                const guestNameRaw = `${booking.guest_last_name || ''} ${booking.guest_first_name || ''}`.trim();
-                const guestName = guestNameRaw ? guestNameRaw : 'Без имени';
-                const packageName = safeValue(booking.package_name);
-                const sheetName = safeValue(booking.sheet_name);
-                const roomType = safeValue(booking.room_type);
-                const placementTypeRaw = booking.placement_type;
-                const placementType = placementMap[placementTypeRaw] || safeValue(placementTypeRaw);
-                const phone = safeValue(booking.client_phone);
-                const price = safeValue(booking.price);
-                const priceLabel = price === '-' ? '-' : `${price} тг`;
-                const amountPaid = safeValue(booking.amount_paid);
-                const comment = booking.comment && booking.comment.trim() !== '' ? booking.comment : '-';
+            const createdLabel = formatDateTime(booking.created_at);
+            const guestNameRaw = `${booking.guest_last_name || ''} ${booking.guest_first_name || ''}`.trim();
+            const guestName = guestNameRaw ? guestNameRaw : 'Без имени';
+            const packageName = safeValue(booking.package_name);
+            const sheetName = safeValue(booking.sheet_name);
+            const roomType = safeValue(booking.room_type);
+            const placementTypeRaw = booking.placement_type;
+            const placementType = placementMap[placementTypeRaw] || safeValue(placementTypeRaw);
+            const groupMembers = Array.isArray(booking.group_members) ? booking.group_members : [];
+            const groupLabel = groupMembers.length > 1 ? groupMembers.join(', ') : null;
+            const phone = safeValue(booking.client_phone);
+            const price = safeValue(booking.price);
+            const priceLabel = price === '-' ? '-' : `${price} тг`;
+            const amountPaid = safeValue(booking.amount_paid);
+            const comment = booking.comment && booking.comment.trim() !== '' ? booking.comment : '-';
                 const managerName = safeValue(booking.manager_name || booking.manager_name_text);
                 const gender = booking.gender === 'F' ? 'Женский' : 'Мужской';
                 const dateOfBirth = safeValue(booking.date_of_birth);
@@ -628,12 +659,20 @@
 
                 if (passportImage) {
                     html += `
-                        <img
-                            src="${API_BASE}/api/care/passport-photo/${booking.id}?ngrok-skip-browser-warning=1"
-                            alt="Паспорт"
-                            class="passport-image"
-                            onerror="this.style.display='none'"
-                        >
+                        <div class="passport-container">
+                            <img
+                                src="${API_BASE}/api/care/passport-photo/${booking.id}?ngrok-skip-browser-warning=1"
+                                alt="Паспорт"
+                                class="passport-image"
+                                onerror="this.style.display='none'"
+                            >
+                            <button
+                                class="download-pdf-btn"
+                                onclick="downloadPassportPDF(${booking.id})"
+                            >
+                                📄 Скачать PDF с текстом
+                            </button>
+                        </div>
                     `;
                 }
 
@@ -645,6 +684,7 @@
                             <div class="booking-detail">Размещение: <strong>${placementType}</strong></div>
                             <div class="booking-detail">Комната: <strong>${roomType}</strong></div>
                             <div class="booking-detail">Строка листа: <strong>${sheetRow}</strong></div>
+                            ${groupLabel ? `<div class="booking-detail">Группа: <strong>${groupLabel}</strong></div>` : ''}
                         </div>
 
                         <button class="details-btn" onclick="toggleDetails('details-${index}', this)">
@@ -652,6 +692,10 @@
                         </button>
 
                         <div class="booking-details-full" id="details-${index}">
+                            <div class="details-section">
+                                ${groupLabel ? `<div class="booking-detail">Группа: <strong>${groupLabel}</strong></div>` : ''}
+                            </div>
+
                             <div class="details-section">
                                 <div class="details-section-title">Паспортные данные</div>
                                 <div class="booking-detail">Пол: <strong>${gender}</strong></div>
@@ -708,6 +752,56 @@
             event.target.classList.add('active');
 
             renderBookings();
+        }
+
+        // Скачивание паспорта в формате PDF с текстовым слоем
+        async function downloadPassportPDF(bookingId) {
+            try {
+                const button = event.target;
+                const originalText = button.innerHTML;
+
+                // Показываем индикатор загрузки
+                button.innerHTML = '⏳ Создание PDF...';
+                button.disabled = true;
+
+                // Запрашиваем PDF с сервера
+                const response = await apiFetch(`${API_BASE}/api/care/passport-pdf/${bookingId}`);
+
+                if (!response.ok) {
+                    throw new Error('Ошибка получения PDF');
+                }
+
+                // Получаем blob данные
+                const blob = await response.blob();
+
+                // Создаем ссылку для скачивания
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `passport_${bookingId}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+
+                // Очищаем
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                // Восстанавливаем кнопку
+                button.innerHTML = '✅ PDF скачан';
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }, 2000);
+
+            } catch (error) {
+                console.error('Ошибка скачивания PDF:', error);
+                const button = event.target;
+                button.innerHTML = '❌ Ошибка';
+                setTimeout(() => {
+                    button.innerHTML = '📄 Скачать PDF с текстом';
+                    button.disabled = false;
+                }, 2000);
+            }
         }
 
         function toggleDetails(detailId, btnElement) {

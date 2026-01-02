@@ -399,7 +399,7 @@ async def add_4u_request(user_id, name, dates, count, room, table_id):
             dates=dates,
             pilgrim_count=count,
             room_type=room,
-            table_id=table_id  # 🔥 Сохраняем ID таблицы
+            table_id=table_id
         )
         session.add(req)
         await session.commit()

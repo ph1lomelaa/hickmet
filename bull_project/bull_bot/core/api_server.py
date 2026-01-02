@@ -30,6 +30,7 @@ from bull_project.bull_bot.database.requests import (
     add_user,
 )
 from bull_project.bull_bot.core.parsers.passport_parser import PassportParserEasyOCR as PassportParser
+from bull_project.bull_bot.core.parsers.pdf_generator import PassportPDFGenerator
 from bull_project.bull_bot.database.requests import (
     get_last_n_bookings_by_manager,
     get_booking_by_id,
@@ -1747,6 +1748,134 @@ async def get_passport_photo(booking_id: int):
 
     except Exception as e:
         print(f"❌ Ошибка получения фото паспорта: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": str(e)}
+        )
+
+
+@app.get("/api/care/passport-pdf/{booking_id}")
+async def get_passport_pdf(booking_id: int):
+    """
+    Возвращает паспорт в формате PDF с текстовым слоем (searchable PDF).
+    Если оригинал - изображение, конвертирует в PDF с OCR.
+    Если уже PDF - возвращает как есть.
+    """
+    try:
+        booking = await get_booking_by_id(booking_id)
+
+        if not booking:
+            return JSONResponse(
+                status_code=404,
+                content={"ok": False, "error": "Booking not found"}
+            )
+
+        # Ищем актуальный путь к паспорту
+        passport_path = booking.passport_image_path
+        if not passport_path and booking.guest_last_name and booking.guest_first_name:
+            passport_path = await get_latest_passport_for_person(
+                booking.guest_last_name,
+                booking.guest_first_name
+            )
+
+        if not passport_path:
+            return JSONResponse(
+                status_code=404,
+                content={"ok": False, "error": "No passport image for this booking"}
+            )
+
+        # Проверяем существование файла
+        if not os.path.exists(passport_path):
+            return JSONResponse(
+                status_code=404,
+                content={"ok": False, "error": f"Passport image file not found: {passport_path}"}
+            )
+
+        # Если уже PDF - отдаем как есть
+        if passport_path.lower().endswith('.pdf'):
+            return FileResponse(
+                passport_path,
+                media_type='application/pdf',
+                filename=f"passport_{booking_id}.pdf"
+            )
+
+        # Если изображение - конвертируем в searchable PDF
+        try:
+            import tempfile
+            pdf_generator = PassportPDFGenerator(debug=False)
+
+            # Создаем временный PDF файл
+            temp_pdf = tempfile.NamedTemporaryFile(
+                suffix='.pdf',
+                delete=False,
+                dir=os.path.dirname(passport_path)
+            )
+            temp_pdf_path = temp_pdf.name
+            temp_pdf.close()
+
+            # Конвертируем в PDF с OCR текстовым слоем
+            print(f"🔄 Конвертация паспорта {booking_id} в PDF с OCR...")
+            result_path = await run_in_threadpool(
+                pdf_generator.convert_passport_to_pdf,
+                passport_path,
+                temp_pdf_path
+            )
+
+            if not result_path or not os.path.exists(result_path):
+                # Если конвертация не удалась, отдаем оригинал как простой PDF (без OCR)
+                print(f"⚠️ OCR не удался, создаем простой PDF...")
+                from reportlab.pdfgen import canvas
+                from PIL import Image
+
+                img = Image.open(passport_path)
+                img_width, img_height = img.size
+                aspect_ratio = img_width / img_height
+
+                if aspect_ratio > 1:
+                    page_width = 842
+                    page_height = 842 / aspect_ratio
+                else:
+                    page_height = 842
+                    page_width = 842 * aspect_ratio
+
+                c = canvas.Canvas(temp_pdf_path, pagesize=(page_width, page_height))
+                c.drawImage(passport_path, 0, 0, width=page_width, height=page_height)
+                c.save()
+
+                result_path = temp_pdf_path
+
+            # Отдаем PDF файл
+            return FileResponse(
+                result_path,
+                media_type='application/pdf',
+                filename=f"passport_{booking_id}.pdf",
+                background=None  # Файл будет удален после отправки
+            )
+
+        except Exception as pdf_error:
+            print(f"❌ Ошибка создания PDF: {pdf_error}")
+            import traceback
+            traceback.print_exc()
+
+            # Fallback: отдаем оригинальное изображение
+            file_ext = os.path.splitext(passport_path)[1].lower()
+            media_types = {
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+            }
+            media_type = media_types.get(file_ext, 'image/png')
+
+            return FileResponse(
+                passport_path,
+                media_type=media_type,
+                filename=f"passport_{booking_id}{file_ext}"
+            )
+
+    except Exception as e:
+        print(f"❌ Ошибка получения паспорта в PDF: {e}")
         import traceback
         traceback.print_exc()
         return JSONResponse(

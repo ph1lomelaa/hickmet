@@ -75,3 +75,4 @@ yarl==1.22.0
 python-multipart
 fastapi
 uvicorn[standard]
+reportlab==4.4.7
