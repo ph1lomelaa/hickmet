@@ -25,7 +25,9 @@ class PassportPDFGenerator:
         self.reader = easyocr.Reader(['en', 'ru'])
 
     def extract_text_with_positions(self, image_path: str) -> list:
-
+        """
+        Извлекает текст с координатами из изображения
+        Возвращает список (bbox, text, confidence)
         """
         try:
             # Конвертируем в JPEG если нужно
