@@ -771,20 +771,36 @@
                     throw new Error('Ошибка получения PDF');
                 }
 
+                // Получаем имя файла из заголовка Content-Disposition
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = `passport_${bookingId}.pdf`;
+
+                if (contentDisposition) {
+                    const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+                    if (matches != null && matches[1]) {
+                        filename = matches[1].replace(/['"]/g, '');
+                    }
+                }
+
                 // Получаем blob данные
                 const blob = await response.blob();
 
                 // Создаем ссылку для скачивания
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
+                a.style.display = 'none';
                 a.href = url;
-                a.download = `passport_${bookingId}.pdf`;
+                a.download = filename;
+
+                // Добавляем в DOM, кликаем и удаляем
                 document.body.appendChild(a);
                 a.click();
 
-                // Очищаем
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
+                // Небольшая задержка перед очисткой для Safari/iOS
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                }, 100);
 
                 // Восстанавливаем кнопку
                 button.innerHTML = '✅ PDF скачан';
