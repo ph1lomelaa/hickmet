@@ -1819,10 +1819,13 @@ async def get_passport_pdf(booking_id: int):
                 }
             )
 
-        # Если изображение - конвертируем в searchable PDF
+        # Если изображение - конвертируем в PDF
         try:
             import tempfile
-            pdf_generator = PassportPDFGenerator(debug=False)
+            from reportlab.pdfgen import canvas
+            from PIL import Image
+            from fastapi import Response
+            import urllib.parse
 
             # Создаем временный PDF файл
             temp_pdf = tempfile.NamedTemporaryFile(
@@ -1833,44 +1836,62 @@ async def get_passport_pdf(booking_id: int):
             temp_pdf_path = temp_pdf.name
             temp_pdf.close()
 
-            # Конвертируем в PDF с OCR текстовым слоем
-            print(f"🔄 Конвертация паспорта {booking_id} в PDF с OCR...")
-            result_path = await run_in_threadpool(
-                pdf_generator.convert_passport_to_pdf,
-                passport_path,
-                temp_pdf_path
-            )
+            # Создаем PDF с изображением
+            print(f"🔄 Создание PDF для паспорта {booking_id}...")
 
-            if not result_path or not os.path.exists(result_path):
-                # Если конвертация не удалась, отдаем оригинал как простой PDF (без OCR)
-                print(f"⚠️ OCR не удался, создаем простой PDF...")
-                from reportlab.pdfgen import canvas
-                from PIL import Image
+            img = Image.open(passport_path)
+            img_width, img_height = img.size
+            aspect_ratio = img_width / img_height
 
-                img = Image.open(passport_path)
-                img_width, img_height = img.size
-                aspect_ratio = img_width / img_height
+            if aspect_ratio > 1:
+                page_width = 842
+                page_height = 842 / aspect_ratio
+            else:
+                page_height = 842
+                page_width = 842 * aspect_ratio
 
-                if aspect_ratio > 1:
-                    page_width = 842
-                    page_height = 842 / aspect_ratio
-                else:
-                    page_height = 842
-                    page_width = 842 * aspect_ratio
+            c = canvas.Canvas(temp_pdf_path, pagesize=(page_width, page_height))
+            c.drawImage(passport_path, 0, 0, width=page_width, height=page_height)
+            c.save()
 
-                c = canvas.Canvas(temp_pdf_path, pagesize=(page_width, page_height))
-                c.drawImage(passport_path, 0, 0, width=page_width, height=page_height)
-                c.save()
+            result_path = temp_pdf_path
 
-                result_path = temp_pdf_path
+            # Проверяем что файл создан и не пустой
+            if not os.path.exists(result_path):
+                raise Exception(f"PDF не создан: {result_path}")
 
-            # Отдаем PDF файл с принудительным скачиванием
-            return FileResponse(
-                result_path,
+            file_size = os.path.getsize(result_path)
+            if file_size == 0:
+                raise Exception("PDF файл пустой")
+
+            print(f"✅ PDF создан: {file_size} байт, путь: {result_path}")
+
+            # Читаем файл в память для гарантированной отправки
+            with open(result_path, 'rb') as f:
+                pdf_content = f.read()
+
+            print(f"✅ PDF прочитан в память: {len(pdf_content)} байт")
+
+            # Удаляем временный файл
+            try:
+                os.remove(result_path)
+                print(f"🗑️ Временный файл удален: {result_path}")
+            except Exception as e:
+                print(f"⚠️ Не удалось удалить временный файл: {e}")
+
+            # Кодируем имя файла по RFC 5987 для поддержки non-ASCII
+            encoded_filename = urllib.parse.quote(pdf_filename)
+
+            print(f"📤 Отправка PDF: {pdf_filename} ({encoded_filename})")
+
+            # Возвращаем через Response с явным содержимым
+            return Response(
+                content=pdf_content,
                 media_type='application/pdf',
-                filename=pdf_filename,
                 headers={
-                    'Content-Disposition': f'attachment; filename="{pdf_filename}"'
+                    'Content-Disposition': f'attachment; filename="{pdf_filename}"; filename*=UTF-8\'\'{encoded_filename}',
+                    'Content-Length': str(len(pdf_content)),
+                    'Cache-Control': 'no-cache',
                 }
             )
 

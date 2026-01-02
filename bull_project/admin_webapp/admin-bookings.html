@@ -670,7 +670,7 @@
                                 class="download-pdf-btn"
                                 onclick="downloadPassportPDF(${booking.id})"
                             >
-                                📄 Скачать PDF с текстом
+                                📄 Скачать PDF
                             </button>
                         </div>
                     `;
@@ -754,7 +754,7 @@
             renderBookings();
         }
 
-        // Скачивание паспорта в формате PDF с текстовым слоем
+        // Скачивание паспорта в формате PDF
         async function downloadPassportPDF(bookingId) {
             try {
                 const button = event.target;
@@ -764,57 +764,86 @@
                 button.innerHTML = '⏳ Создание PDF...';
                 button.disabled = true;
 
+                console.log(`📥 Запрос PDF для booking ${bookingId}...`);
+
                 // Запрашиваем PDF с сервера
                 const response = await apiFetch(`${API_BASE}/api/care/passport-pdf/${bookingId}`);
 
+                console.log(`📨 Получен ответ: status=${response.status}, ok=${response.ok}`);
+
                 if (!response.ok) {
-                    throw new Error('Ошибка получения PDF');
+                    const errorText = await response.text();
+                    console.error('❌ Ошибка от сервера:', errorText);
+                    throw new Error(`Ошибка получения PDF: ${response.status}`);
                 }
 
                 // Получаем имя файла из заголовка Content-Disposition
                 const contentDisposition = response.headers.get('Content-Disposition');
                 let filename = `passport_${bookingId}.pdf`;
 
+                console.log(`📄 Content-Disposition: ${contentDisposition}`);
+
                 if (contentDisposition) {
-                    const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
-                    if (matches != null && matches[1]) {
-                        filename = matches[1].replace(/['"]/g, '');
+                    // Сначала пробуем filename*= (UTF-8 encoded)
+                    const utf8Match = /filename\*=UTF-8''([^;\s]+)/.exec(contentDisposition);
+                    if (utf8Match) {
+                        filename = decodeURIComponent(utf8Match[1]);
+                        console.log(`✅ Извлечено имя файла (UTF-8): ${filename}`);
+                    } else {
+                        // Fallback на обычный filename=
+                        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+                        if (matches != null && matches[1]) {
+                            filename = matches[1].replace(/['"]/g, '');
+                            console.log(`✅ Извлечено имя файла: ${filename}`);
+                        }
                     }
                 }
 
                 // Получаем blob данные
                 const blob = await response.blob();
 
+                console.log(`📦 Получен blob: ${blob.size} байт, тип: ${blob.type}`);
+
+                // Проверяем что blob не пустой
+                if (blob.size === 0) {
+                    throw new Error('Получен пустой файл от сервера');
+                }
+
                 // Создаем ссылку для скачивания
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.style.display = 'none';
                 a.href = url;
                 a.download = filename;
+                a.style.display = 'none';
 
-                // Добавляем в DOM, кликаем и удаляем
+                // Добавляем в DOM и кликаем
                 document.body.appendChild(a);
+
+                console.log(`🖱️ Клик по ссылке для скачивания: ${filename}`);
                 a.click();
 
                 // Небольшая задержка перед очисткой для Safari/iOS
                 setTimeout(() => {
                     document.body.removeChild(a);
                     window.URL.revokeObjectURL(url);
-                }, 100);
+                    console.log('🗑️ Ссылка и blob очищены');
+                }, 150);
 
                 // Восстанавливаем кнопку
                 button.innerHTML = '✅ PDF скачан';
+                console.log('✅ PDF успешно скачан');
+
                 setTimeout(() => {
                     button.innerHTML = originalText;
                     button.disabled = false;
                 }, 2000);
 
             } catch (error) {
-                console.error('Ошибка скачивания PDF:', error);
+                console.error('❌ Ошибка скачивания PDF:', error);
                 const button = event.target;
                 button.innerHTML = '❌ Ошибка';
                 setTimeout(() => {
-                    button.innerHTML = '📄 Скачать PDF с текстом';
+                    button.innerHTML = '📄 Скачать PDF';
                     button.disabled = false;
                 }, 2000);
             }
