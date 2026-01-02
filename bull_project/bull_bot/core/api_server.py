@@ -1772,6 +1772,20 @@ async def get_passport_pdf(booking_id: int):
                 content={"ok": False, "error": "Booking not found"}
             )
 
+        # Формируем имя файла из ФИО
+        import re
+        last_name = (booking.guest_last_name or "").strip()
+        first_name = (booking.guest_first_name or "").strip()
+
+        # Безопасное имя файла: убираем спецсимволы
+        safe_last_name = re.sub(r'[^\w\s-]', '', last_name).strip()
+        safe_first_name = re.sub(r'[^\w\s-]', '', first_name).strip()
+
+        if safe_last_name and safe_first_name:
+            pdf_filename = f"{safe_last_name}_{safe_first_name}_passport.pdf"
+        else:
+            pdf_filename = f"passport_{booking_id}.pdf"
+
         # Ищем актуальный путь к паспорту
         passport_path = booking.passport_image_path
         if not passport_path and booking.guest_last_name and booking.guest_first_name:
@@ -1798,7 +1812,10 @@ async def get_passport_pdf(booking_id: int):
             return FileResponse(
                 passport_path,
                 media_type='application/pdf',
-                filename=f"passport_{booking_id}.pdf"
+                filename=pdf_filename,
+                headers={
+                    'Content-Disposition': f'attachment; filename="{pdf_filename}"'
+                }
             )
 
         # Если изображение - конвертируем в searchable PDF
@@ -1846,12 +1863,14 @@ async def get_passport_pdf(booking_id: int):
 
                 result_path = temp_pdf_path
 
-            # Отдаем PDF файл
+            # Отдаем PDF файл с принудительным скачиванием
             return FileResponse(
                 result_path,
                 media_type='application/pdf',
-                filename=f"passport_{booking_id}.pdf",
-                background=None  # Файл будет удален после отправки
+                filename=pdf_filename,
+                headers={
+                    'Content-Disposition': f'attachment; filename="{pdf_filename}"'
+                }
             )
 
         except Exception as pdf_error:
